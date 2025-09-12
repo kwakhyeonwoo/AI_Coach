@@ -1,0 +1,10 @@
+// DEV ONLY!
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /interviewSessions/{id} {
+      allow create, read: if true;    // 임시로 모두 허용
+      allow update, delete: if false;
+    }
+  }
+}

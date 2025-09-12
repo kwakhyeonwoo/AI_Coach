@@ -1,0 +1,1 @@
+export const fmtDate = (ms?: number) => (ms ? new Date(ms).toLocaleString() : '-');

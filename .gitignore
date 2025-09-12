@@ -39,3 +39,16 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+.env
+node_modules/
+.expo/
+.dist/
+dist/
+android/
+ios/
+web-build/
+.expo-shared/
+coverage/
+functions/node_modules/
+.firebase/
+.firebaserc

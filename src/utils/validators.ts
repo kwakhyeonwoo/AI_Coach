@@ -1,0 +1,1 @@
+export const nonEmpty = (v?: string) => !!v && v.trim().length > 0;
