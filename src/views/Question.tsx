@@ -59,44 +59,28 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
 
   const startRecording = async () => {
   try {
+    // 1) 권한
     const perm = await Audio.requestPermissionsAsync();
-    if (perm.status !== 'granted') {
+    if (!perm.granted) {
       Alert.alert('권한 필요', '설정에서 마이크 권한을 허용해주세요.');
       return;
     }
 
+    // 2) 오디오 세션 (iOS/Android 공통 안정 세팅)
     await Audio.setAudioModeAsync({
       allowsRecordingIOS: true,
-      playsInSilentModeIOS: true
+      playsInSilentModeIOS: true,
+      shouldDuckAndroid: true,
+      playThroughEarpieceAndroid: false,
+      staysActiveInBackground: false,
     });
 
-    const rec = new Audio.Recording();
+    // 3) 녹음 시작 (프리셋 사용: 플랫폼별 옵션 알아서 적용)
+    const { recording } = await Audio.Recording.createAsync(
+      Audio.RecordingOptionsPresets.HIGH_QUALITY
+    );
 
-    const recordingOptions: Audio.RecordingOptions = Platform.select({
-      ios: {
-        extension: '.m4a',
-        outputFormat: Audio.IOSOutputFormat.MPEG4AAC,
-        audioQuality: Audio.IOSAudioQuality.MAX,
-        sampleRate: 44100,
-        numberOfChannels: 2,
-        bitRate: 128000
-      },
-      android: {
-        extension: '.m4a',
-        outputFormat: Audio.AndroidOutputFormat.MPEG_4,
-        audioEncoder: Audio.AndroidAudioEncoder.AAC,
-        sampleRate: 44100,
-        numberOfChannels: 2,
-        bitRate: 128000
-      },
-      // 웹은 사용 안 해도 타입 맞추기용
-      default: undefined
-    }) as unknown as Audio.RecordingOptions;
-
-    await rec.prepareToRecordAsync(recordingOptions);
-    await rec.startAsync();
-
-    setRecording(rec);
+    setRecording(recording);
     setIsRecording(true);
     setAudioUri(undefined);
     setRemain(90);
@@ -113,9 +97,9 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
         return r - 1;
       });
     }, 1000);
-  } catch (e) {
+  } catch (e: any) {
     console.warn('startRecording error', e);
-    Alert.alert('녹음 시작 실패', '다시 시도해주세요.');
+    Alert.alert('녹음 시작 실패', e?.message ?? '다시 시도해주세요.');
   }
 };
 
@@ -132,6 +116,7 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
     } finally {
       setIsRecording(false);
       setRecording(null);
+      try { await Audio.setAudioModeAsync({ allowsRecordingIOS: false }); } catch {}
     }
   };
 
