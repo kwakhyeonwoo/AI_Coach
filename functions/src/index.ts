@@ -1,81 +1,128 @@
-// Callable — 질문 생성/다음 질문
-import * as admin from 'firebase-admin';
-import * as functions from 'firebase-functions';
-import { onCall } from 'firebase-functions/v2/https';
-import { setGlobalOptions } from 'firebase-functions/v2';
-import OpenAI from 'openai';
+import {initializeApp} from "firebase-admin/app";
+import {onRequest} from "firebase-functions/v2/https";
+import {defineSecret} from "firebase-functions/params";
+import OpenAI from "openai";
 
-admin.initializeApp();
-setGlobalOptions({ region: 'asia-northeast3', timeoutSeconds: 60, memory: '256MiB' });
+initializeApp();
 
-const OPENAI_KEY =
-  process.env.OPENAI_API_KEY || (functions.config().openai && functions.config().openai.key);
-if (!OPENAI_KEY) {
-  console.warn('Missing OpenAI key. Run: firebase functions:config:set openai.key="sk-..."');
-}
-const openai = new OpenAI({ apiKey: OPENAI_KEY });
+const OPENAI_API_KEY = defineSecret("OPENAI_API_KEY");
 
-const MAX_QUESTIONS = 5;
+type QA = {q: string; a?: string};
 
-type Settings = { role: string; language: 'ko' | 'en'; difficulty: 'beginner' | 'intermediate' | 'advanced' };
-type QA = { q: string; a: string };
+const FALLBACK: Record<string, string[]> = {
+  iOS: [
+    "iOS 앱에서 메모리 누수가 발생했을 때 어떻게 디버깅하고 해결하시겠습니까?",
+    "GCD와 OperationQueue의 차이와 선택 기준은 무엇인가요?",
+    "Swift Concurrency 적용 시 주의할 점은 무엇인가요?",
+    "Instruments로 성능 최적화하는 절차를 설명해 주세요.",
+    "HLS 스트리밍 지연을 어떻게 진단하고 개선하나요?",
+  ],
+  Android: [
+    "Android에서 메모리 누수를 어떻게 진단하고 해결하나요?",
+    "Coroutine/Flow를 대규모 화면에 적용하는 구조를 설명해 주세요.",
+    "RecyclerView 성능 최적화 팁을 설명해 주세요.",
+  ],
+  Frontend: [
+    "React 렌더링 최적화를 위해 어떤 전략을 사용하시나요?",
+    "CSR/SSR/SSG를 어떤 기준으로 선택하나요?",
+  ],
+  Backend: [
+    "대규모 트래픽에서 DB 경합 문제를 어떻게 진단하고 해결하나요?",
+    "비동기 작업 큐를 어떤 기준으로 설계하나요?",
+  ],
+  Data: [
+    "피처 누출을 어떻게 방지하고 검증하나요?",
+    "데이터 품질 검사를 프로덕션에 어떻게 자동화하셨나요?",
+  ],
+};
 
-function systemFor(s: Settings) {
-  const lang = s.language === 'en' ? 'English' : 'Korean';
-  return `You are a senior interviewer for ${s.role}. Ask exactly one ${s.difficulty} interview question. Only return the question in ${lang}. No preface, no numbering.`;
-}
+export const interviewQuestion = onRequest(
+  {
+    cors: true,
+    region: "asia-northeast3",
+    timeoutSeconds: 30,
+    memory: "1GiB",
+    secrets: [OPENAI_API_KEY],
+  },
+  async (req, res) => {
+    if (req.method !== "POST") {
+      res.status(405).send("Method Not Allowed");
+      return;
+    }
 
-async function genQuestion(settings: Settings, history: QA[]) {
-  // 면접 종료 → 요약
-  if (history.length >= MAX_QUESTIONS) {
-    const lang = settings.language === 'en' ? 'English' : 'Korean';
-    const resp = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: `You are an interview coach. Summarize the candidate performance in ${lang}. Provide 3 concise bullets and an overall score (0-100).` },
-        { role: 'user', content: JSON.stringify({ settings, history }) },
-      ],
-      temperature: 0.4,
-      max_tokens: 320,
-    });
-    const summary = resp.choices[0].message.content || '';
-    return { done: true, summary };
+    const body = req.body || {};
+    const role: string = (body.role || "iOS").trim();
+    const history: QA[] = Array.isArray(body.history) ? body.history : [];
+    const maxQ: number = body.maxQ || 5;
+    const difficulty: string = body.difficulty || "mid";
+
+    const idx = history.length;
+    if (idx >= maxQ) {
+      res.json({question: null, done: true});
+      return;
+    }
+
+    const topics = FALLBACK[role] ? role : "iOS";
+
+    const SYSTEM =
+      "You are a senior technical interviewer. " +
+      "Generate exactly ONE interview question in Korean, no numbering, " +
+      "no quotes. It must be precise, practical, and role-specific (" +
+      topics +
+      "), difficulty=" +
+      difficulty +
+      ". Return ONLY the question text, nothing else.";
+
+    const hist = history
+      .map((h, i) => "Q" + (i + 1) + ": " + h.q +
+        "\nA" + (i + 1) + ": " + (h.a || "(audio)") + "\n")
+      .join("\n");
+
+    const USER =
+      "직무: " + topics + "\n" +
+      "총 문항 수: " + maxQ + "\n" +
+      "현재 인덱스: " + idx + "\n" +
+      "이전 문답:\n" + hist +
+      "요구사항:\n" +
+      "- 한국어로 단 한 문장 질문만 생성\n" +
+      "- 직무 핵심을 겨냥 (원인 진단→해결/트레이드오프)\n" +
+      "- 난이도: " + difficulty + "\n" +
+      "- 도메인 키워드 포함";
+
+    const client = new OpenAI({apiKey: OPENAI_API_KEY.value()});
+    let question: string | null = null;
+
+    try {
+      const r = await client.chat.completions.create({
+        model: "gpt-4o-mini",
+        temperature: 0.7,
+        max_tokens: 120,
+        messages: [
+          {role: "system", content: SYSTEM},
+          {role: "user", content: USER},
+        ],
+      });
+
+      question = r.choices?.[0]?.message?.content?.trim() || null;
+
+      if (question && question.includes("\n")) {
+        const first = question.split("\n").find(Boolean);
+        question = first || question;
+      }
+      if (question) {
+        question = question
+          .replace(/^["'“”‘’\s]*\d*[).-\s]?\s*/, "")
+          .trim();
+      }
+    } catch {
+      // ignore; fallback below
+    }
+
+    if (!question) {
+      const list = FALLBACK[topics] || FALLBACK.iOS;
+      question = list[idx % list.length];
+    }
+
+    res.json({question, done: false});
   }
-
-  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: 'system', content: systemFor(settings) },
-  ];
-  if (history.length) {
-    messages.push({
-      role: 'user',
-      content:
-        `Previous Q/A:\n` +
-        history.map((h, i) => `${i + 1}. Q: ${h.q}\nA: ${h.a}`).join('\n\n') +
-        `\nNext question:`,
-    });
-  } else {
-    messages.push({ role: 'user', content: 'First question:' });
-  }
-
-  const resp = await openai.chat.completions.create({
-    model: 'gpt-4o-mini',
-    messages,
-    temperature: 0.6,
-    max_tokens: 200,
-  });
-  let question = resp.choices[0].message.content?.trim() || '';
-  question = question.replace(/^(\d+\.|\-|\*)\s*/, ''); // 번호/불릿 제거
-  return { done: false, question };
-}
-
-export const ai_createQuestion = onCall({ region: 'asia-northeast3' }, async (req) => {
-  const { settings } = (req.data || {}) as { settings: Settings };
-  if (!settings) throw new Error('Missing settings');
-  return genQuestion(settings, []);
-});
-
-export const ai_nextQuestion = onCall({ region: 'asia-northeast3' }, async (req) => {
-  const { settings, history } = (req.data || {}) as { settings: Settings; history: QA[] };
-  if (!settings) throw new Error('Missing settings');
-  return genQuestion(settings, Array.isArray(history) ? history : []);
-});
+);

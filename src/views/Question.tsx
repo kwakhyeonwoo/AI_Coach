@@ -39,7 +39,7 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
     (async () => {
       setLoading(true);
       try {
-        const res = await requestFirstQuestion(settings);
+        const res = await requestFirstQuestion(settings, { maxQ: 5 });
         if (res.question) setQuestion(res.question);
       } catch (e: any) {
         Alert.alert('질문 로드 실패', e?.message ?? '서버 오류');
@@ -126,7 +126,7 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
     setHistory(newHist);
     setLoading(true);
     try {
-      const res = await requestNextQuestion(settings, newHist);
+      const res = await requestNextQuestion(settings, newHist, { maxQ: 5 });
       if (res.done) {
         navigation.replace('Summary', { sessionId: route.params?.sessionId ?? 'local' });
       } else if (res.question) {

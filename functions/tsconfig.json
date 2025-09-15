@@ -1,16 +1,16 @@
 {
   "compilerOptions": {
     "target": "ES2020",
-    "module": "ESNext",                 // ← bundler 사용 요건 충족
-    "moduleResolution": "Bundler",
-    "jsx": "react-jsx",
-    "strict": true,
-    "skipLibCheck": true,
+    "lib": ["ES2020"],
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "rootDir": "src",
+    "outDir": "lib",
+    "esModuleInterop": true,
     "resolveJsonModule": true,
-    "isolatedModules": true,
-    "noEmit": true,
-    "baseUrl": ".",
-    "paths": { "@/*": ["src/*"] }
+    "strict": true,
+    "skipLibCheck": true
   },
-  "include": ["**/*.ts", "**/*.tsx", "index.ts", "src"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules"]
 }
