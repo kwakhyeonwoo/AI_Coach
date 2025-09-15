@@ -1,6 +1,8 @@
+// functions/src/index.ts
 import {initializeApp} from "firebase-admin/app";
 import {onRequest} from "firebase-functions/v2/https";
 import {defineSecret} from "firebase-functions/params";
+import * as logger from "firebase-functions/logger";
 import OpenAI from "openai";
 
 initializeApp();
@@ -40,7 +42,7 @@ export const interviewQuestion = onRequest(
   {
     cors: true,
     region: "asia-northeast3",
-    timeoutSeconds: 30,
+    timeoutSeconds: 60,
     memory: "1GiB",
     secrets: [OPENAI_API_KEY],
   },
@@ -89,7 +91,13 @@ export const interviewQuestion = onRequest(
       "- 난이도: " + difficulty + "\n" +
       "- 도메인 키워드 포함";
 
-    const client = new OpenAI({apiKey: OPENAI_API_KEY.value()});
+    // ✅ 시크릿 확인 + 로깅
+    const apiKey = OPENAI_API_KEY.value();
+    if (!apiKey) {
+      logger.error("OPENAI_API_KEY is missing");
+    }
+    const client = new OpenAI({apiKey});
+
     let question: string | null = null;
 
     try {
@@ -105,6 +113,7 @@ export const interviewQuestion = onRequest(
 
       question = r.choices?.[0]?.message?.content?.trim() || null;
 
+      // 규칙 위반(번호/여러 줄) 방지
       if (question && question.includes("\n")) {
         const first = question.split("\n").find(Boolean);
         question = first || question;
@@ -114,8 +123,21 @@ export const interviewQuestion = onRequest(
           .replace(/^["'“”‘’\s]*\d*[).-\s]?\s*/, "")
           .trim();
       }
-    } catch {
-      // ignore; fallback below
+
+      // 너무 짧으면 실패로 간주하여 폴백 사용
+      if (!question || question.length < 5) {
+        logger.warn("Model returned empty/short question, using fallback.");
+        question = null;
+      }
+    } catch (err: any) {
+      // ✅ 실패 원인 그대로 남기기 (콘솔 Logs에서 확인)
+      logger.error("OpenAI call failed", {
+        message: err?.message,
+        name: err?.name,
+        status: err?.status,
+        data: err?.response?.data,
+      });
+      question = null;
     }
 
     if (!question) {
