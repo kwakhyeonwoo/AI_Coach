@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, Alert, Animated, Easing } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList, QA } from '../models/types';
 import { useInterviewVM } from '../viewmodels/InterviewVM';
 import { requestFirstQuestion, requestNextQuestion } from '../services/apiClient';
+// expo-av 그대로 사용 중이면 아래 import 유지, expo-audio로 바꿨다면 교체만 하면 됨
 import { Audio } from 'expo-av';
-import { Platform } from 'react-native';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Question'>;
 
@@ -25,14 +26,35 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
   const [loading, setLoading] = useState(false);
   const [question, setQuestion] = useState<string>('');
   const [history, setHistory] = useState<QA[]>([]);
-  const [followups, setFollowups] = useState(0); // Pro 모드용 카운트
+  const [followups, setFollowups] = useState(0);
 
   // 음성 녹음 상태
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
-  const [remain, setRemain] = useState(90); // 90초 카운트다운
+  const [remain, setRemain] = useState(90);
   const [audioUri, setAudioUri] = useState<string | undefined>();
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // 파동/펄스 애니메이션
+  const [level, setLevel] = useState(0);                 // 0~1
+  const pulse = useRef(new Animated.Value(0)).current;   // 외곽 링 펄스
+
+  useEffect(() => {
+    if (isRecording) {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulse, { toValue: 1, duration: 600, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+          Animated.timing(pulse, { toValue: 0, duration: 600, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+        ])
+      );
+      loop.start();
+      return () => loop.stop();
+    } else {
+      pulse.stopAnimation();
+      pulse.setValue(0);
+      setLevel(0);
+    }
+  }, [isRecording]);
 
   // 첫 질문 로드
   useEffect(() => {
@@ -58,55 +80,69 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
   };
 
   const startRecording = async () => {
-  try {
-    // 1) 권한
-    const perm = await Audio.requestPermissionsAsync();
-    if (!perm.granted) {
-      Alert.alert('권한 필요', '설정에서 마이크 권한을 허용해주세요.');
-      return;
-    }
+    try {
+      const perm = await Audio.requestPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('권한 필요', '설정에서 마이크 권한을 허용해주세요.');
+        return;
+      }
 
-    // 2) 오디오 세션 (iOS/Android 공통 안정 세팅)
-    await Audio.setAudioModeAsync({
-      allowsRecordingIOS: true,
-      playsInSilentModeIOS: true,
-      shouldDuckAndroid: true,
-      playThroughEarpieceAndroid: false,
-      staysActiveInBackground: false,
-    });
-
-    // 3) 녹음 시작 (프리셋 사용: 플랫폼별 옵션 알아서 적용)
-    const { recording } = await Audio.Recording.createAsync(
-      Audio.RecordingOptionsPresets.HIGH_QUALITY
-    );
-
-    setRecording(recording);
-    setIsRecording(true);
-    setAudioUri(undefined);
-    setRemain(90);
-
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => {
-      setRemain(r => {
-        if (r <= 1) {
-          clearInterval(timerRef.current!);
-          timerRef.current = null;
-          stopRecording();
-          return 0;
-        }
-        return r - 1;
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+        staysActiveInBackground: false,
       });
-    }, 1000);
-  } catch (e: any) {
-    console.warn('startRecording error', e);
-    Alert.alert('녹음 시작 실패', e?.message ?? '다시 시도해주세요.');
-  }
-};
+
+      // 레벨 업데이트(아이폰: metering, 안드로이드: 의사 파형)
+      const onStatus = (st: any) => {
+        if (typeof st?.metering === 'number') {
+          const norm = Math.min(1, Math.max(0, (st.metering + 160) / 160));
+          setLevel(prev => prev * 0.6 + norm * 0.4);
+        } else {
+          setLevel(prev => prev * 0.75 + (0.25 * (0.3 + Math.random() * 0.7)));
+        }
+      };
+
+      const opts: any = {
+        ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
+        ios: {
+          ...(Audio.RecordingOptionsPresets.HIGH_QUALITY as any).ios,
+          meteringEnabled: true,      // expo-av
+          isMeteringEnabled: true,    // expo-audio
+        },
+      };
+
+      const { recording } = await Audio.Recording.createAsync(opts, onStatus, 100);
+      setRecording(recording);
+      setIsRecording(true);
+      setAudioUri(undefined);
+      setRemain(90);
+
+      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = setInterval(() => {
+        setRemain(r => {
+          if (r <= 1) {
+            clearInterval(timerRef.current!);
+            timerRef.current = null;
+            stopRecording();
+            return 0;
+          }
+          return r - 1;
+        });
+      }, 1000);
+    } catch (e: any) {
+      console.warn('startRecording error', e);
+      Alert.alert('녹음 시작 실패', e?.message ?? '다시 시도해주세요.');
+    }
+  };
 
   const stopRecording = async () => {
     try {
       if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
       if (recording) {
+        try { (recording as any).setOnRecordingStatusUpdate?.(null); } catch {}
         await recording.stopAndUnloadAsync();
         const uri = recording.getURI() || undefined;
         setAudioUri(uri);
@@ -116,12 +152,12 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
     } finally {
       setIsRecording(false);
       setRecording(null);
+      setLevel(0);
       try { await Audio.setAudioModeAsync({ allowsRecordingIOS: false }); } catch {}
     }
   };
 
   const onNext = async () => {
-    // 지금은 음성 파일만 확보. 추후 서버 전사/채점 붙일 예정.
     const newHist = [...history, { q: question, a: audioUri ? `[audio] ${audioUri}` : '(no audio)' }];
     setHistory(newHist);
     setLoading(true);
@@ -133,7 +169,6 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
         setQuestion(res.question);
         setIndex((i) => i + 1);
         setFollowups(0);
-        // 녹음 상태 초기화
         setAudioUri(undefined);
         setRemain(90);
         setIsRecording(false);
@@ -145,7 +180,6 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
     }
   };
 
-  // 진행도 (단순 비율)
   const progress = Math.min(1, (index - 1) / maxQ);
 
   return (
@@ -155,60 +189,127 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
         <Text style={styles.badge}>Q {index}/{maxQ}</Text>
         <Text style={styles.badgeAlt}>팔로업 {followups}/2</Text>
       </View>
-      <View style={styles.progress}><View style={[styles.progressFill, { width: `${progress*100}%` }]} /></View>
+      <View style={styles.progress}><View style={[styles.progressFill, { width: `${progress * 100}%` }]} /></View>
 
       {/* 질문 카드 */}
       <View style={styles.card}>
         <Text style={styles.q}>{question || (loading ? '질문 생성 중…' : '질문을 불러오세요')}</Text>
         <View style={styles.tagRow}>
-          {['성능','디버깅','메모리 관리'].map(t=> (
+          {['성능', '디버깅', '메모리 관리'].map(t => (
             <View key={t} style={styles.tag}><Text style={styles.tagText}>{t}</Text></View>
           ))}
         </View>
       </View>
 
-      {/* 녹음 패널 */}
-      <View style={[styles.card,{ marginTop:12, alignItems:'center' }]}> 
-        <View style={styles.ring}><Text style={{ fontSize:16, color:'#6b7280' }}>{remain}</Text></View>
-        <Pressable
-          onPress={isRecording ? stopRecording : askMicAndStart}
-          style={({ pressed }) => [styles.fab, isRecording ? styles.fabActive : null, pressed && { opacity: 0.8 } ]}
+      {/* ▼▼ 새 녹음 패널 UI ▼▼ */}
+      <View style={[styles.card, { marginTop: 12, alignItems: 'center', paddingVertical: 16 }]}>
+        <Text style={{ color: '#6b7280', marginBottom: 8 }}>{remain}s</Text>
+
+        <Animated.View
+          style={[
+            styles.micOuter,
+            isRecording && { borderColor: '#FACC15', shadowOpacity: 0.35 },
+            {
+              transform: [{
+                scale: isRecording
+                  ? pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1 + level * 0.25 + 0.05] })
+                  : 1,
+              }],
+            },
+          ]}
         >
-          <Text style={{ color:'#fff', fontSize:28 }}>{isRecording ? '■' : '✓'}</Text>
-        </Pressable>
-        <Text style={{ marginTop:8, color:'#6b7280' }}>{isRecording ? '녹음 중…' : (audioUri ? '완료' : '대기 중')}</Text>
+          <Pressable
+            onPress={isRecording ? stopRecording : askMicAndStart}
+            style={({ pressed }) => [styles.micInner, pressed && { opacity: 0.9 }]}
+          >
+            <MaterialCommunityIcons
+              name={isRecording ? 'microphone' : 'microphone-outline'}
+              size={36}
+              color="#FACC15"
+            />
+          </Pressable>
+        </Animated.View>
+
+        <Waveform level={level} isRecording={isRecording} />
+
+        <Text style={{ marginTop: 8, color: '#6b7280' }}>
+          {isRecording ? '녹음 중…' : (audioUri ? '완료' : '대기 중')}
+        </Text>
       </View>
+      {/* ▲▲ 새 녹음 패널 UI ▲▲ */}
 
       {/* 하단 보조 버튼 + 다음 */}
-      <View style={{ flexDirection:'row', gap:12, marginTop:12 }}>
+      <View style={{ flexDirection: 'row', gap: 12, marginTop: 12 }}>
         <SmallBtn label="다시 질문" onPress={() => { /* 서버 재생성 로직 가능 */ }} />
         <SmallBtn label="스킵 (1회)" onPress={() => onNext()} />
       </View>
 
-      <Pressable onPress={onNext} disabled={loading || (!audioUri && !isRecording)} style={({ pressed }) => [styles.cta, pressed && { opacity: 0.85 }, (loading || (!audioUri && !isRecording)) && { opacity: 0.5 }]}>
+      <Pressable
+        onPress={onNext}
+        disabled={loading || (!audioUri && !isRecording)}
+        style={({ pressed }) => [styles.cta, pressed && { opacity: 0.85 }, (loading || (!audioUri && !isRecording)) && { opacity: 0.5 }]}
+      >
         {loading ? <ActivityIndicator /> : <Text style={styles.ctaText}>다음 질문</Text>}
       </Pressable>
     </View>
   );
 };
 
+/** 간단한 파형: 레벨(0~1)에 비례해 막대 높이 변화 */
+function Waveform({ level, isRecording }: { level: number; isRecording: boolean }) {
+  const bars = 18;
+  const arr = Array.from({ length: bars });
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', height: 48, marginTop: 14 }}>
+      {arr.map((_, i) => {
+        const phase = (i / bars) * Math.PI;
+        const h = 6 + Math.pow(Math.sin(phase), 2) * (14 + 60 * level);
+        return (
+          <View
+            key={i}
+            style={{
+              width: 4,
+              height: h,
+              borderRadius: 2,
+              marginHorizontal: 2,
+              backgroundColor: isRecording ? '#FDE047' : '#D1D5DB',
+            }}
+          />
+        );
+      })}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, paddingHorizontal: 16, paddingTop: 12, backgroundColor: '#fff' },
   topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   badge: { fontSize: 12, color: '#1f2937' },
   badgeAlt: { fontSize: 12, color: '#6b7280' },
-  progress: { height: 6, backgroundColor: '#E5E7EB', borderRadius: 999, overflow:'hidden' },
+  progress: { height: 6, backgroundColor: '#E5E7EB', borderRadius: 999, overflow: 'hidden' },
   progressFill: { height: '100%', backgroundColor: '#9ca3af' },
-  card: { backgroundColor: '#F3F4F6', borderRadius: 12, padding: 12, borderWidth:1, borderColor:'#E5E7EB', marginTop:12 },
-  q: { fontSize: 16, fontWeight: '600', color:'#111827' },
-  tagRow: { flexDirection:'row', marginTop:8 },
-  tag: { backgroundColor:'#EEF2FF', borderRadius: 12, paddingHorizontal:8, paddingVertical:4, marginRight:6 },
-  tagText: { fontSize: 12, color:'#374151' },
-  ring: { width: 96, height: 96, borderRadius: 48, borderWidth: 8, borderColor: '#E5E7EB', alignItems: 'center', justifyContent:'center', marginTop:8 },
-  fab: { width: 72, height: 72, borderRadius: 36, backgroundColor:'#10B981', alignItems:'center', justifyContent:'center', marginTop:12 },
-  fabActive: { backgroundColor:'#EF4444' },
-  smallBtn: { flex:1, height: 44, borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', alignItems:'center', justifyContent:'center', backgroundColor:'#fff' },
-  smallBtnText: { color:'#111827', fontSize: 14 },
+  card: { backgroundColor: '#F3F4F6', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#E5E7EB', marginTop: 12 },
+  q: { fontSize: 16, fontWeight: '600', color: '#111827' },
+  tagRow: { flexDirection: 'row', marginTop: 8 },
+  tag: { backgroundColor: '#EEF2FF', borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4, marginRight: 6 },
+  tagText: { fontSize: 12, color: '#374151' },
+
+  // 새 마이크 버튼
+  micOuter: {
+    width: 120, height: 120, borderRadius: 60,
+    borderWidth: 6, borderColor: '#E5E7EB',
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'transparent',
+    shadowColor: '#FACC15', shadowOffset: { width: 0, height: 0 }, shadowRadius: 16, shadowOpacity: 0,
+  },
+  micInner: {
+    width: 108, height: 108, borderRadius: 54,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#0F172A', // 남색 배경
+  },
+
+  smallBtn: { flex: 1, height: 44, borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
+  smallBtnText: { color: '#111827', fontSize: 14 },
   cta: { height: 48, borderRadius: 12, backgroundColor: '#111827', alignItems: 'center', justifyContent: 'center', marginTop: 12 },
   ctaText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 });
