@@ -1,6 +1,8 @@
 {
   "expo": {
-    "plugin": ["expo-av"],
+    "plugin": [
+      "expo-av"
+    ],
     "name": "ai-interview-coach",
     "slug": "ai-interview-coach",
     "version": "1.0.0",
@@ -20,7 +22,9 @@
       }
     },
     "android": {
-      "permissions": ["RECORD_AUDIO"],
+      "permissions": [
+        "RECORD_AUDIO"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -30,6 +34,9 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-audio"
+    ]
   }
 }

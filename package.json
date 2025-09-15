@@ -9,7 +9,7 @@
     "web": "expo start --web"
   },
   "dependencies": {
-    "@react-native-async-storage/async-storage": "^2.2.0",
+    "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-firebase/app": "^23.3.1",
     "@react-native-firebase/database": "^23.3.1",
     "@react-native-firebase/firestore": "^23.3.1",
@@ -28,7 +28,8 @@
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
     "zustand": "^5.0.8",
-    "@expo/vector-icons": "^15.0.2"
+    "@expo/vector-icons": "^15.0.2",
+    "expo-audio": "~1.0.11"
   },
   "devDependencies": {
     "@types/react": "~19.1.0",

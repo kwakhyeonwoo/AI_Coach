@@ -1,14 +1,26 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, Alert, Animated, Easing } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, Alert, Animated, Easing, Linking } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList, QA } from '../models/types';
 import { useInterviewVM } from '../viewmodels/InterviewVM';
 import { requestFirstQuestion, requestNextQuestion } from '../services/apiClient';
-// expo-av 그대로 사용 중이면 아래 import 유지, expo-audio로 바꿨다면 교체만 하면 됨
-import { Audio } from 'expo-av';
+
+// ✅ expo-audio 사용
+import {
+  useAudioRecorder,
+  RecordingPresets,
+  setAudioModeAsync,
+  requestRecordingPermissionsAsync,
+  getRecordingPermissionsAsync,
+} from 'expo-audio';
+
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Question'>;
+
+// ✅ 최초 1회 안내 Alert 플래그 키
+const MIC_PREASK_KEY = 'mic_preask_done_v1';
 
 const SmallBtn: React.FC<{ label: string; onPress?: () => void; disabled?: boolean }>
   = ({ label, onPress, disabled }) => (
@@ -28,8 +40,7 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
   const [history, setHistory] = useState<QA[]>([]);
   const [followups, setFollowups] = useState(0);
 
-  // 음성 녹음 상태
-  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  // 🔊 상태
   const [isRecording, setIsRecording] = useState(false);
   const [remain, setRemain] = useState(90);
   const [audioUri, setAudioUri] = useState<string | undefined>();
@@ -45,7 +56,7 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
         Animated.sequence([
           Animated.timing(pulse, { toValue: 1, duration: 600, easing: Easing.out(Easing.quad), useNativeDriver: true }),
           Animated.timing(pulse, { toValue: 0, duration: 600, easing: Easing.in(Easing.quad), useNativeDriver: true }),
-        ])
+        ]),
       );
       loop.start();
       return () => loop.stop();
@@ -69,64 +80,135 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
         setLoading(false);
       }
     })();
-    return () => { stopRecording(); };
+
+    // 언마운트 시 녹음/타이머 정리
+    return () => { stopRecording().catch(()=>{}); };
   }, []);
 
-  const askMicAndStart = () => {
-    Alert.alert('마이크 권한', '음성 녹음을 허락하시겠습니까?', [
-      { text: '비동의', style: 'cancel' },
-      { text: '동의', onPress: startRecording },
-    ]);
-  };
+  type MeteringStatus = { metering?: number | null };
 
-  const startRecording = async () => {
+  // ✅ expo-audio 녹음기 + 메터링
+  const recorder = useAudioRecorder(
+    { ...RecordingPresets.HIGH_QUALITY, isMeteringEnabled: true },
+    (st: unknown) => {
+      const m = (st as MeteringStatus)?.metering;
+      if (typeof m === 'number') {
+        const norm = Math.min(1, Math.max(0, (m + 160) / 160));
+        setLevel(prev => prev * 0.6 + norm * 0.4);
+      } else {
+        // (Android 등) 메터링 미지원 시 의사 파형
+        setLevel(prev => prev * 0.75 + 0.25 * (0.3 + Math.random() * 0.7));
+      }
+    }
+  );
+
+  // ⏯ 마이크 버튼: 최초 1회만 우리 Alert → 그 다음부턴 바로 동작
+  const handleMicPress = async () => {
     try {
-      const perm = await Audio.requestPermissionsAsync();
-      if (!perm.granted) {
-        Alert.alert('권한 필요', '설정에서 마이크 권한을 허용해주세요.');
+      const perm = await getRecordingPermissionsAsync();
+      const shown = await AsyncStorage.getItem(MIC_PREASK_KEY);
+
+      // ✅ 1) 우리 안내 Alert를 '무조건' 딱 한 번 먼저 보여준다 (권한 상태와 무관)
+      if (!shown) {
+        await AsyncStorage.setItem(MIC_PREASK_KEY, '1'); // 다시는 안 보이게
+
+        if (perm.granted) {
+          // 이미 OS 권한이 있는 경우: 안내 후 바로 녹음 시작 선택
+          Alert.alert(
+            '마이크 사용 안내',
+            '지금부터 마이크 녹음을 시작할게요.',
+            [
+              { text: '취소', style: 'cancel' },
+              { text: '시작', onPress: () => startRecording() },
+            ],
+          );
+          return;
+        }
+
+        if (perm.status === 'undetermined') {
+          // 아직 한 번도 OS 권한을 안 물어본 경우: 안내 → OS 다이얼로그
+          Alert.alert(
+            '마이크 사용 안내',
+            '다음 단계에서 OS 권한을 요청합니다.',
+            [
+              { text: '취소', style: 'cancel' },
+              {
+                text: '동의하고 계속',
+                onPress: async () => {
+                  const req = await requestRecordingPermissionsAsync();
+                  if (req.granted) await startRecording();
+                  else Alert.alert('마이크 권한 필요', '설정에서 마이크 권한을 허용해주세요.');
+                },
+              },
+            ],
+          );
+          return;
+        }
+
+        // 명시적으로 거부돼 있는 경우
+        Alert.alert(
+          '마이크 권한이 꺼져 있어요',
+          '설정에서 마이크 권한을 허용하면 녹음이 가능합니다.',
+          [
+            { text: '취소', style: 'cancel' },
+            { text: '설정 열기', onPress: () => Linking.openSettings?.() },
+          ],
+        );
         return;
       }
 
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        shouldDuckAndroid: true,
-        playThroughEarpieceAndroid: false,
-        staysActiveInBackground: false,
+      // ✅ 2) 이미 한 번 안내를 보여줬다면, 권한 상태에 따라 바로 동작
+      if (perm.granted) {
+        if (isRecording) await stopRecording();
+        else await startRecording();
+        return;
+      }
+
+      if (perm.status === 'undetermined') {
+        const req = await requestRecordingPermissionsAsync();
+        if (req.granted) await startRecording();
+        else Alert.alert('마이크 권한 필요', '설정에서 마이크 권한을 허용해주세요.');
+        return;
+      }
+
+      Alert.alert(
+        '마이크 권한이 꺼져 있어요',
+        '설정에서 마이크 권한을 허용하면 녹음이 가능합니다.',
+        [
+          { text: '취소', style: 'cancel' },
+          { text: '설정 열기', onPress: () => Linking.openSettings?.() },
+        ],
+      );
+    } catch (e) {
+      console.warn('handleMicPress error', e);
+    }
+  };
+
+
+
+  const startRecording = async () => {
+    try {
+      await setAudioModeAsync({
+        playsInSilentMode: true,
+        allowsRecording: true,
       });
 
-      // 레벨 업데이트(아이폰: metering, 안드로이드: 의사 파형)
-      const onStatus = (st: any) => {
-        if (typeof st?.metering === 'number') {
-          const norm = Math.min(1, Math.max(0, (st.metering + 160) / 160));
-          setLevel(prev => prev * 0.6 + norm * 0.4);
-        } else {
-          setLevel(prev => prev * 0.75 + (0.25 * (0.3 + Math.random() * 0.7)));
-        }
-      };
+      await recorder.prepareToRecordAsync();
+      recorder.record();
 
-      const opts: any = {
-        ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
-        ios: {
-          ...(Audio.RecordingOptionsPresets.HIGH_QUALITY as any).ios,
-          meteringEnabled: true,      // expo-av
-          isMeteringEnabled: true,    // expo-audio
-        },
-      };
-
-      const { recording } = await Audio.Recording.createAsync(opts, onStatus, 100);
-      setRecording(recording);
       setIsRecording(true);
       setAudioUri(undefined);
       setRemain(90);
 
+      // ✅ 90초 카운트다운
       if (timerRef.current) clearInterval(timerRef.current);
       timerRef.current = setInterval(() => {
-        setRemain(r => {
+        setRemain((r) => {
           if (r <= 1) {
             clearInterval(timerRef.current!);
             timerRef.current = null;
-            stopRecording();
+            // 자동 종료
+            stopRecording().catch(()=>{});
             return 0;
           }
           return r - 1;
@@ -141,19 +223,15 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
   const stopRecording = async () => {
     try {
       if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-      if (recording) {
-        try { (recording as any).setOnRecordingStatusUpdate?.(null); } catch {}
-        await recording.stopAndUnloadAsync();
-        const uri = recording.getURI() || undefined;
-        setAudioUri(uri);
+      if (isRecording) {
+        await recorder.stop();
+        setAudioUri(recorder.uri ?? undefined);
       }
     } catch (e) {
       // no-op
     } finally {
       setIsRecording(false);
-      setRecording(null);
       setLevel(0);
-      try { await Audio.setAudioModeAsync({ allowsRecordingIOS: false }); } catch {}
     }
   };
 
@@ -219,7 +297,7 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
           ]}
         >
           <Pressable
-            onPress={isRecording ? stopRecording : askMicAndStart}
+            onPress={handleMicPress}
             style={({ pressed }) => [styles.micInner, pressed && { opacity: 0.9 }]}
           >
             <MaterialCommunityIcons
@@ -305,7 +383,7 @@ const styles = StyleSheet.create({
   micInner: {
     width: 108, height: 108, borderRadius: 54,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#0F172A', // 남색 배경
+    backgroundColor: '#0F172A',
   },
 
   smallBtn: { flex: 1, height: 44, borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
