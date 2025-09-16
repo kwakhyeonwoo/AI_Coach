@@ -120,8 +120,10 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
             {vm.question || (vm.loading ? '질문 생성 중…' : '질문을 불러오세요')}
           </Text>
           <View style={styles.tagRow}>
-            {['성능', '디버깅', '메모리 관리'].map(t => (
-              <View key={t} style={styles.tag}><Text style={styles.tagText}>{t}</Text></View>
+            {vm.tags.map(t => (
+              <View key={t} style={styles.tag}>
+                <Text style={styles.tagText}>{t}</Text>
+                </View>
             ))}
           </View>
         </View>
