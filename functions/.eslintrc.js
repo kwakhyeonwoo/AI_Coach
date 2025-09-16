@@ -1,33 +1,24 @@
+/* functions/.eslintrc.js */
 module.exports = {
   root: true,
-  env: {
-    es6: true,
-    node: true,
-  },
+  parser: "@typescript-eslint/parser",
+  plugins: ["@typescript-eslint"],
   extends: [
     "eslint:recommended",
-    "plugin:import/errors",
-    "plugin:import/warnings",
-    "plugin:import/typescript",
-    "google",
     "plugin:@typescript-eslint/recommended",
-  ],
-  parser: "@typescript-eslint/parser",
-  parserOptions: {
-    project: ["tsconfig.json", "tsconfig.dev.json"],
-    sourceType: "module",
-  },
-  ignorePatterns: [
-    "/lib/**/*", // Ignore built files.
-    "/generated/**/*", // Ignore generated files.
-  ],
-  plugins: [
-    "@typescript-eslint",
-    "import",
+    "prettier" // ← 포맷 관련 규칙 끄기
   ],
   rules: {
-    "quotes": ["error", "double"],
-    "import/no-unresolved": 0,
-    "indent": ["error", 2],
-  },
+    // 포맷/스타일 규칙 완화
+    quotes: ["off", "double", { avoidEscape: true }],
+    "max-len": "off",
+    indent: "off",
+    "arrow-parens": "off",
+    "object-curly-spacing": "off",
+    "comma-dangle": "off",
+    "require-jsdoc": "off",
+    // 타입/임포트 관련
+    "@typescript-eslint/no-explicit-any": "off",
+    "import/no-unresolved": "off"
+  }
 };

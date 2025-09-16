@@ -9,10 +9,11 @@ const KO_STOP = new Set([
   // 스샷에 나오던 것들
   '발생','발생할','발생할수','과정','과정에서','있는지','있으며','어떻게든','어떤가요'
 ]);
+
 const EN_STOP = new Set([
     'the','a','an','to','of','for','in','on','at','and','or','with','by','is','are',
     'be','as','what','which','how','why','please','explain','using','use','choose','when'
-]);
+])
 
 /** 1) 도메인 사전 */
 const HEADS = [
@@ -108,9 +109,9 @@ export function extractTagsFromQuestion(
     const a = tokens[i], b = tokens[i + 1];
     if (isStop(a) || isStop(b)) continue;
 
-    if (HEADS.includes(a) && TAILS.includes(b)) add(`${a} ${b}`, 2.0);        // 메모리 관리, 성능 최적화
-    if (HEADS.includes(a) && HEADS.includes(b)) add(`${a} ${b}`, 1.6);        // 데이터 일관성
-    if (MODS.includes(a) && HEADS.includes(b)) add(`${a} ${b}`, 1.4);         // 비동기 작업
+    if (HEADS.includes(a) && TAILS.includes(b)) add(`${a} ${b}`, 2.0);// 메모리 관리, 성능 최적화
+    if (HEADS.includes(a) && HEADS.includes(b)) add(`${a} ${b}`, 1.6);// 데이터 일관성
+    if (MODS.includes(a) && HEADS.includes(b)) add(`${a} ${b}`, 1.4);// 비동기 작업
   }
 
   // 2-3) 유니그램(보조): HEAD/TAIL/MOD 단독

@@ -6,6 +6,7 @@ import type { RootStackParamList, Mode } from '../models/types';
 import { useInterviewVM } from '../viewmodels/InterviewVM';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS } from '@/theme/tokens';
+import { resolveAndExtractJD } from "@/utils/jd";
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
@@ -40,16 +41,23 @@ const Chip: React.FC<{ label: string }> = ({ label }) => (
 const Home: React.FC<Props> = ({ navigation }) => {
   const { startNewSession, loading, settings, setSettings, setMode } = useInterviewVM();
   const [keywords, setKeywords] = useState<string[]>(settings.jdKeywords || []);
+  const [extracting, setExtracting] = useState(false);
 
-  const extractKeywords = () => {
-    const text = settings.jdText || '';
-    const words = text.toLowerCase().replace(/[^a-z0-9가-힣\s]/g,' ').split(/\s+/).filter(w => w.length>=2);
-    const freq: Record<string, number> = {};
-    words.forEach(w=>{ freq[w]=(freq[w]||0)+1; });
-    const sorted = Object.entries(freq).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([w])=>w);
-    setKeywords(sorted);
-    setSettings({ jdKeywords: sorted });
-  };
+  const extractKeywords = async () => {
+    const raw = (settings.jdText || "").trim();
+    if (!raw) return;
+    setExtracting(true);
+    try {
+        const { text, keywords } = await resolveAndExtractJD(raw, settings.role as any, {
+        // endpoint를 .env에 EXPO_PUBLIC_JD_SCRAPE_URL로 넣었다면 옵션 필요 없음
+        topK: 10
+        });
+        setSettings({ jdText: text, jdKeywords: keywords });
+        setKeywords(keywords);
+    } finally {
+        setExtracting(false);
+    }
+  };  
 
   const start = async () => {
     const id = await startNewSession();
@@ -128,8 +136,13 @@ const Home: React.FC<Props> = ({ navigation }) => {
             />
 
             <View style={{ height:8 }} />
-            <Button label="키워드 추출" onPress={extractKeywords} variant='secondary' />
-
+            <Button
+                label={extracting ? "추출 중..." : "키워드 추출"}
+                onPress={extractKeywords}
+                variant='secondary'
+                disabled={extracting}
+            />
+            
             {!!keywords.length && (
               <View style={s.row}>
                 {keywords.map(k => <Chip key={k} label={k} />)}
