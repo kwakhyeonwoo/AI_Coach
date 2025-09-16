@@ -1,12 +1,16 @@
+// src/screens/Question.tsx
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, Alert, Animated, Easing, Linking } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, Alert, Animated, Easing, Linking, Platform, ScrollView } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList, QA } from '../models/types';
 import { useInterviewVM } from '../viewmodels/InterviewVM';
 import { requestFirstQuestion, requestNextQuestion } from '../services/apiClient';
+import { TOKENS } from '@/theme/tokens';
 
-// ✅ expo-audio 사용
+// ✅ expo-audio 사용(기존 기능 유지)
 import {
   useAudioRecorder,
   RecordingPresets,
@@ -19,7 +23,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Question'>;
 
-// ✅ 최초 1회 안내 Alert 플래그 키
+// 최초 1회 안내 Alert 플래그 키
 const MIC_PREASK_KEY = 'mic_preask_done_v1';
 
 const SmallBtn: React.FC<{ label: string; onPress?: () => void; disabled?: boolean }>
@@ -87,7 +91,7 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
 
   type MeteringStatus = { metering?: number | null };
 
-  // ✅ expo-audio 녹음기 + 메터링
+  // ✅ expo-audio 녹음기 + 메터링(기존 기능 유지)
   const recorder = useAudioRecorder(
     { ...RecordingPresets.HIGH_QUALITY, isMeteringEnabled: true },
     (st: unknown) => {
@@ -108,28 +112,18 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
       const perm = await getRecordingPermissionsAsync();
       const shown = await AsyncStorage.getItem(MIC_PREASK_KEY);
 
-      // ✅ 1) 우리 안내 Alert를 '무조건' 딱 한 번 먼저 보여준다 (권한 상태와 무관)
       if (!shown) {
         await AsyncStorage.setItem(MIC_PREASK_KEY, '1'); // 다시는 안 보이게
 
         if (perm.granted) {
-          // 이미 OS 권한이 있는 경우: 안내 후 바로 녹음 시작 선택
-          Alert.alert(
-            '마이크 사용 안내',
-            '지금부터 마이크 녹음을 시작할게요.',
-            [
-              { text: '취소', style: 'cancel' },
-              { text: '시작', onPress: () => startRecording() },
-            ],
+          Alert.alert('마이크 사용 안내','지금부터 마이크 녹음을 시작할게요.',
+            [{ text: '취소', style: 'cancel' }, { text: '시작', onPress: () => startRecording() }],
           );
           return;
         }
 
         if (perm.status === 'undetermined') {
-          // 아직 한 번도 OS 권한을 안 물어본 경우: 안내 → OS 다이얼로그
-          Alert.alert(
-            '마이크 사용 안내',
-            '다음 단계에서 OS 권한을 요청합니다.',
+          Alert.alert('마이크 사용 안내','다음 단계에서 OS 권한을 요청합니다.',
             [
               { text: '취소', style: 'cancel' },
               {
@@ -145,19 +139,15 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
           return;
         }
 
-        // 명시적으로 거부돼 있는 경우
         Alert.alert(
           '마이크 권한이 꺼져 있어요',
           '설정에서 마이크 권한을 허용하면 녹음이 가능합니다.',
-          [
-            { text: '취소', style: 'cancel' },
-            { text: '설정 열기', onPress: () => Linking.openSettings?.() },
-          ],
+          [{ text: '취소', style: 'cancel' }, { text: '설정 열기', onPress: () => Linking.openSettings?.() }],
         );
         return;
       }
 
-      // ✅ 2) 이미 한 번 안내를 보여줬다면, 권한 상태에 따라 바로 동작
+      // 안내를 이미 본 경우
       if (perm.granted) {
         if (isRecording) await stopRecording();
         else await startRecording();
@@ -174,17 +164,12 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
       Alert.alert(
         '마이크 권한이 꺼져 있어요',
         '설정에서 마이크 권한을 허용하면 녹음이 가능합니다.',
-        [
-          { text: '취소', style: 'cancel' },
-          { text: '설정 열기', onPress: () => Linking.openSettings?.() },
-        ],
+        [{ text: '취소', style: 'cancel' }, { text: '설정 열기', onPress: () => Linking.openSettings?.() }],
       );
     } catch (e) {
       console.warn('handleMicPress error', e);
     }
   };
-
-
 
   const startRecording = async () => {
     try {
@@ -200,7 +185,7 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
       setAudioUri(undefined);
       setRemain(90);
 
-      // ✅ 90초 카운트다운
+      // 90초 카운트다운
       if (timerRef.current) clearInterval(timerRef.current);
       timerRef.current = setInterval(() => {
         setRemain((r) => {
@@ -259,77 +244,103 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
   };
 
   const progress = Math.min(1, (index - 1) / maxQ);
+  const insets = useSafeAreaInsets();
+
+  const cardStyle = {
+    backgroundColor: TOKENS.cardBg,
+    borderRadius: TOKENS.cardRadius,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: TOKENS.border,
+  } as const;
 
   return (
-    <View style={styles.container}>
-      {/* 상단 헤더 */}
-      <View style={styles.topBar}>
-        <Text style={styles.badge}>Q {index}/{maxQ}</Text>
-        <Text style={styles.badgeAlt}>팔로업 {followups}/2</Text>
-      </View>
-      <View style={styles.progress}><View style={[styles.progressFill, { width: `${progress * 100}%` }]} /></View>
-
-      {/* 질문 카드 */}
-      <View style={styles.card}>
-        <Text style={styles.q}>{question || (loading ? '질문 생성 중…' : '질문을 불러오세요')}</Text>
-        <View style={styles.tagRow}>
-          {['성능', '디버깅', '메모리 관리'].map(t => (
-            <View key={t} style={styles.tag}><Text style={styles.tagText}>{t}</Text></View>
-          ))}
+    <SafeAreaView style={{ flex: 1, backgroundColor: TOKENS.bg }} edges={['top','left','right']}>
+      <ScrollView
+        contentInsetAdjustmentBehavior={Platform.OS === 'ios' ? 'automatic' : 'never'}
+        contentContainerStyle={{
+          paddingTop: 6,
+          paddingHorizontal: TOKENS.gap,
+          paddingBottom: insets.bottom + 24,
+          gap: 16,
+        }}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* ===== 상단 헤더 ===== */}
+        <View style={styles.topBar}>
+          <Text style={styles.badge}>Q {index}/{maxQ}</Text>
+          <Text style={styles.badgeAlt}>팔로업 {followups}/2</Text>
         </View>
-      </View>
+        <View style={styles.progress}><View style={[styles.progressFill, { width: `${progress * 100}%` }]} /></View>
 
-      {/* ▼▼ 새 녹음 패널 UI ▼▼ */}
-      <View style={[styles.card, { marginTop: 12, alignItems: 'center', paddingVertical: 16 }]}>
-        <Text style={{ color: '#6b7280', marginBottom: 8 }}>{remain}s</Text>
+        {/* ===== 질문 카드 ===== */}
+        <View style={[cardStyle]}>
+          <Text style={styles.q}>
+            {question || (loading ? '질문 생성 중…' : '질문을 불러오세요')}
+          </Text>
+          <View style={styles.tagRow}>
+            {['성능', '디버깅', '메모리 관리'].map(t => (
+              <View key={t} style={styles.tag}><Text style={styles.tagText}>{t}</Text></View>
+            ))}
+          </View>
+        </View>
 
-        <Animated.View
-          style={[
-            styles.micOuter,
-            isRecording && { borderColor: '#FACC15', shadowOpacity: 0.35 },
-            {
-              transform: [{
-                scale: isRecording
-                  ? pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1 + level * 0.25 + 0.05] })
-                  : 1,
-              }],
-            },
+        {/* ===== 녹음 패널 (중앙 정렬) ===== */}
+        <View style={[cardStyle, { alignItems: 'center', justifyContent: 'center', gap: 12, minHeight: 280 }]}>
+          <Text style={{ color: TOKENS.sub }}>{remain}s</Text>
+
+          <Animated.View
+            style={[
+              styles.micOuter,
+              isRecording && { borderColor: '#FACC15', shadowOpacity: 0.35 },
+              {
+                transform: [{
+                  scale: isRecording
+                    ? pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1 + level * 0.25 + 0.05] })
+                    : 1,
+                }],
+              },
+            ]}
+          >
+            <Pressable
+              onPress={handleMicPress}
+              style={({ pressed }) => [styles.micInner, pressed && { opacity: 0.9 }]}
+              accessibilityRole="button"
+            >
+              <MaterialCommunityIcons
+                name={isRecording ? 'microphone' : 'microphone-outline'}
+                size={40}
+                color="#FACC15"
+              />
+            </Pressable>
+          </Animated.View>
+
+          <Waveform level={level} isRecording={isRecording} />
+
+          <Text style={{ color: TOKENS.sub }}>
+            {isRecording ? '녹음 중…' : (audioUri ? '완료' : '대기 중')}
+          </Text>
+        </View>
+
+        {/* ===== 하단 액션 ===== */}
+        <View style={{ flexDirection: 'row', gap: 12 }}>
+          <SmallBtn label="다시 질문" onPress={() => { /* 서버 재생성 로직 가능 */ }} />
+          <SmallBtn label="스킵 (1회)" onPress={() => onNext()} />
+        </View>
+
+        <Pressable
+          onPress={onNext}
+          disabled={loading || (!audioUri && !isRecording)}
+          style={({ pressed }) => [
+            styles.cta,
+            pressed && { opacity: 0.88 },
+            (loading || (!audioUri && !isRecording)) && { opacity: 0.5 }
           ]}
         >
-          <Pressable
-            onPress={handleMicPress}
-            style={({ pressed }) => [styles.micInner, pressed && { opacity: 0.9 }]}
-          >
-            <MaterialCommunityIcons
-              name={isRecording ? 'microphone' : 'microphone-outline'}
-              size={36}
-              color="#FACC15"
-            />
-          </Pressable>
-        </Animated.View>
-
-        <Waveform level={level} isRecording={isRecording} />
-
-        <Text style={{ marginTop: 8, color: '#6b7280' }}>
-          {isRecording ? '녹음 중…' : (audioUri ? '완료' : '대기 중')}
-        </Text>
-      </View>
-      {/* ▲▲ 새 녹음 패널 UI ▲▲ */}
-
-      {/* 하단 보조 버튼 + 다음 */}
-      <View style={{ flexDirection: 'row', gap: 12, marginTop: 12 }}>
-        <SmallBtn label="다시 질문" onPress={() => { /* 서버 재생성 로직 가능 */ }} />
-        <SmallBtn label="스킵 (1회)" onPress={() => onNext()} />
-      </View>
-
-      <Pressable
-        onPress={onNext}
-        disabled={loading || (!audioUri && !isRecording)}
-        style={({ pressed }) => [styles.cta, pressed && { opacity: 0.85 }, (loading || (!audioUri && !isRecording)) && { opacity: 0.5 }]}
-      >
-        {loading ? <ActivityIndicator /> : <Text style={styles.ctaText}>다음 질문</Text>}
-      </Pressable>
-    </View>
+          {loading ? <ActivityIndicator /> : <Text style={styles.ctaText}>다음 질문</Text>}
+        </Pressable>
+      </ScrollView>
+    </SafeAreaView>
   );
 };
 
@@ -338,7 +349,7 @@ function Waveform({ level, isRecording }: { level: number; isRecording: boolean 
   const bars = 18;
   const arr = Array.from({ length: bars });
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', height: 48, marginTop: 14 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', height: 48, marginTop: 4 }}>
       {arr.map((_, i) => {
         const phase = (i / bars) * Math.PI;
         const h = 6 + Math.pow(Math.sin(phase), 2) * (14 + 60 * level);
@@ -360,36 +371,51 @@ function Waveform({ level, isRecording }: { level: number; isRecording: boolean 
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingHorizontal: 16, paddingTop: 12, backgroundColor: '#fff' },
-  topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  badge: { fontSize: 12, color: '#1f2937' },
-  badgeAlt: { fontSize: 12, color: '#6b7280' },
+  topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  badge: { fontSize: 12, color: TOKENS.label, fontWeight: '600' },
+  badgeAlt: { fontSize: 12, color: TOKENS.sub },
   progress: { height: 6, backgroundColor: '#E5E7EB', borderRadius: 999, overflow: 'hidden' },
   progressFill: { height: '100%', backgroundColor: '#9ca3af' },
-  card: { backgroundColor: '#F3F4F6', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#E5E7EB', marginTop: 12 },
-  q: { fontSize: 16, fontWeight: '600', color: '#111827' },
-  tagRow: { flexDirection: 'row', marginTop: 8 },
-  tag: { backgroundColor: '#EEF2FF', borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4, marginRight: 6 },
-  tagText: { fontSize: 12, color: '#374151' },
 
-  // 새 마이크 버튼
+  q: { fontSize: 16, fontWeight: '600', color: TOKENS.label },
+  tagRow: { flexDirection: 'row', marginTop: 8, flexWrap: 'wrap', gap: 8 },
+  tag: {
+    backgroundColor: '#EEF2FF',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: TOKENS.border,
+  },
+  tagText: { fontSize: 12, color: TOKENS.sub },
+
+  // 중앙 마이크 버튼
   micOuter: {
-    width: 120, height: 120, borderRadius: 60,
+    width: 140, height: 140, borderRadius: 70,
     borderWidth: 6, borderColor: '#E5E7EB',
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: 'transparent',
     shadowColor: '#FACC15', shadowOffset: { width: 0, height: 0 }, shadowRadius: 16, shadowOpacity: 0,
   },
   micInner: {
-    width: 108, height: 108, borderRadius: 54,
+    width: 120, height: 120, borderRadius: 60,
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: '#0F172A',
   },
 
-  smallBtn: { flex: 1, height: 44, borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
-  smallBtnText: { color: '#111827', fontSize: 14 },
-  cta: { height: 48, borderRadius: 12, backgroundColor: '#111827', alignItems: 'center', justifyContent: 'center', marginTop: 12 },
-  ctaText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  smallBtn: {
+    flex: 1, height: 44, borderRadius: 12,
+    borderWidth: 1, borderColor: TOKENS.border,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: TOKENS.cardBg,
+  },
+  smallBtnText: { color: TOKENS.label, fontSize: 14, fontWeight: '600' },
+
+  cta: {
+    height: 52, borderRadius: 14,
+    backgroundColor: '#111827',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  ctaText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });
 
 export default Question;

@@ -3,6 +3,8 @@ import { View, Text, Pressable, StyleSheet, ActivityIndicator, TextInput, Scroll
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList, Mode } from '../models/types';
 import { useInterviewVM } from '../viewmodels/InterviewVM';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { TOKENS } from '@/theme/tokens';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
@@ -30,11 +32,19 @@ const Segmented: React.FC<{ options: string[]; value: string; onChange: (v:strin
   </View>
 );
 
+const cardStyle = {
+  backgroundColor: TOKENS.cardBg,
+  borderRadius: TOKENS.cardRadius,
+  padding: 12,
+  borderWidth: 1,
+  borderColor: TOKENS.border,
+};
+
 const Chip: React.FC<{ label: string }> = ({ label }) => (
   <View style={styles.chip}><Text style={styles.chipText}>{label}</Text></View>
 );
 
-const Home: React.FC<Props> = ({ navigation }) => {
+const Home: React.FC<Props> = ({ navigation, route }) => {
   const { startNewSession, loading, settings, setSettings, setMode } = useInterviewVM();
   const [keywords, setKeywords] = useState<string[]>(settings.jdKeywords || []);
 
@@ -53,6 +63,8 @@ const Home: React.FC<Props> = ({ navigation }) => {
     navigation.navigate('Question', { sessionId: id });
   };
 
+  const insets = useSafeAreaInsets();
+  
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 20 }}>
       <View style={styles.appbar}>
@@ -112,9 +124,7 @@ const Home: React.FC<Props> = ({ navigation }) => {
 
       <View style={{ height: 16 }} />
       <View style={styles.row}>
-        <Button label="히스토리" onPress={() => navigation.navigate('History')} variant='secondary' />
-        <View style={{ width: 12 }} />
-        <Button label="설정" onPress={() => navigation.navigate('Settings')} variant='secondary' />
+        
       </View>
 
     </ScrollView>

@@ -1,5 +1,9 @@
 import React from 'react';
 import { View, Text } from 'react-native';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../models/types';
+
+type Props = NativeStackScreenProps<RootStackParamList, 'Summary'>;
 
 export default function Summary() {
   return (
