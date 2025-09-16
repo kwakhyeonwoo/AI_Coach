@@ -1,3 +1,4 @@
+// src/screens/Home.tsx
 import React, { useState } from 'react';
 import { View, Text, Pressable, StyleSheet, ActivityIndicator, TextInput, ScrollView } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -12,39 +13,31 @@ const Button: React.FC<{ label: string; onPress?: () => void; disabled?: boolean
 = ({ label, onPress, disabled, variant='primary' }) => (
   <Pressable onPress={onPress} disabled={disabled}
     style={({ pressed }) => [
-      styles.btn,
-      variant==='secondary' && styles.btnSecondary,
-      pressed && { opacity: 0.7 },
+      s.btn,
+      variant==='secondary' && s.btnSecondary,
+      pressed && { opacity: 0.85 },
       disabled && { opacity: 0.4 },
     ]}
   >
-    <Text style={[styles.btnText, variant==='secondary' && styles.btnTextSecondary]}>{label}</Text>
+    <Text style={[s.btnText, variant==='secondary' && s.btnTextSecondary]}>{label}</Text>
   </Pressable>
 );
 
 const Segmented: React.FC<{ options: string[]; value: string; onChange: (v:string)=>void }> = ({ options, value, onChange }) => (
-  <View style={styles.segmented}>
+  <View style={s.segmented}>
     {options.map(o => (
-      <Pressable key={o} onPress={() => onChange(o)} style={[styles.segment, value===o && styles.segmentActive]}>
-        <Text style={[styles.segmentText, value===o && styles.segmentTextActive]}>{o}</Text>
+      <Pressable key={o} onPress={() => onChange(o)} style={[s.segment, value===o && s.segmentActive]}>
+        <Text style={[s.segmentText, value===o && s.segmentTextActive]}>{o}</Text>
       </Pressable>
     ))}
   </View>
 );
 
-const cardStyle = {
-  backgroundColor: TOKENS.cardBg,
-  borderRadius: TOKENS.cardRadius,
-  padding: 12,
-  borderWidth: 1,
-  borderColor: TOKENS.border,
-};
-
 const Chip: React.FC<{ label: string }> = ({ label }) => (
-  <View style={styles.chip}><Text style={styles.chipText}>{label}</Text></View>
+  <View style={s.chip}><Text style={s.chipText}>{label}</Text></View>
 );
 
-const Home: React.FC<Props> = ({ navigation, route }) => {
+const Home: React.FC<Props> = ({ navigation }) => {
   const { startNewSession, loading, settings, setSettings, setMode } = useInterviewVM();
   const [keywords, setKeywords] = useState<string[]>(settings.jdKeywords || []);
 
@@ -64,91 +57,137 @@ const Home: React.FC<Props> = ({ navigation, route }) => {
   };
 
   const insets = useSafeAreaInsets();
-  
+
+  const cardStyle = {
+    backgroundColor: TOKENS.cardBg,
+    borderRadius: TOKENS.cardRadius,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: TOKENS.border,
+  } as const;
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: 20 }}>
-      <View style={styles.appbar}>
-        <Text style={{ fontWeight:'700' }}>[AI]</Text>
-        <Pressable onPress={() => navigation.navigate('ProUpsell')}>
-          <Text style={{ fontSize:12, fontWeight:'700' }}>[PRO]</Text>
-        </Pressable>
-      </View>
-
-      {/* 회사/직무 카드 */}
-      <View style={styles.card}>
-        <Text style={styles.label}>회사(선택/입력)</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="예) 토스, 네이버"
-          value={settings.company}
-          onChangeText={(t)=>setSettings({ company: t })}
-        />
-        <Text style={[styles.label,{ marginTop:12 }]}>직무</Text>
-        <Segmented
-          options={['iOS','Android','Frontend','Backend','Data']}
-          value={settings.role}
-          onChange={(v)=>setSettings({ role: v })}
-        />
-      </View>
-
-      {/* 모드 토글 */}
-      <Text style={[styles.label,{ marginTop:16 }]}>모드</Text>
-      <Segmented
-        options={['Free','Pro']}
-        value={settings.mode==='pro'?'Pro':'Free'}
-        onChange={(v)=>setMode(v.toLowerCase() as Mode)}
-      />
-
-      {/* Pro: JD 입력/키워드 */}
-      {settings.mode==='pro' && (
-        <View style={[styles.card,{ marginTop:12 }]}>
-          <Text style={styles.label}>JD URL/텍스트</Text>
-          <TextInput
-            style={[styles.input,{ minHeight:100, textAlignVertical:'top' }]}
-            placeholder="JD를 붙여넣으세요"
-            value={settings.jdText}
-            onChangeText={(t)=>setSettings({ jdText: t })}
-            multiline
-          />
-          <View style={{ height:8 }} />
-          <Button label="키워드 추출" onPress={extractKeywords} variant='secondary' />
-          <View style={styles.row}>
-            {keywords.map(k => <Chip key={k} label={k} />)}
-          </View>
+    <SafeAreaView style={{ flex: 1, backgroundColor: TOKENS.bg }} edges={['top','left','right']}>
+      <ScrollView
+        contentContainerStyle={{
+          paddingTop: 8,                         // 상단 꽉 차보이게
+          paddingHorizontal: TOKENS.gap,
+          paddingBottom: insets.bottom + 24,
+          gap: 16,
+        }}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* ===== App Bar ===== */}
+        <View style={s.appbar}>
+          <Text style={s.brand}>AI</Text>
+          <Pressable onPress={() => navigation.navigate('ProUpsell')}>
+            <Text style={s.proBadge}>{settings.mode==='pro' ? 'PRO' : '업그레이드'}</Text>
+          </Pressable>
         </View>
-      )}
 
-      <View style={{ height: 16 }} />
-      <Button label="세트 시작하기" onPress={start} disabled={loading} />
-      {loading && <ActivityIndicator style={{ marginTop: 12 }} />}
+        {/* ===== 회사 / 직무 ===== */}
+        <View style={cardStyle}>
+          <Text style={s.label}>회사(선택/입력)</Text>
+          <TextInput
+            style={s.input}
+            placeholder="예) 토스, 네이버"
+            placeholderTextColor={TOKENS.sub}
+            value={settings.company}
+            onChangeText={(t)=>setSettings({ company: t })}
+          />
 
-      <View style={{ height: 16 }} />
-      <View style={styles.row}>
-        
-      </View>
+          <Text style={[s.label,{ marginTop:12 }]}>직무</Text>
+          <Segmented
+            options={['iOS','Android','Frontend','Backend','Data']}
+            value={settings.role}
+            onChange={(v)=>setSettings({ role: v })}
+          />
+        </View>
 
-    </ScrollView>
+        {/* ===== 모드 ===== */}
+        <View>
+          <Text style={s.label}>모드</Text>
+          <Segmented
+            options={['Free','Pro']}
+            value={settings.mode==='pro'?'Pro':'Free'}
+            onChange={(v)=>setMode(v.toLowerCase() as Mode)}
+          />
+        </View>
+
+        {/* ===== Pro: JD 입력/키워드 ===== */}
+        {settings.mode==='pro' && (
+          <View style={[cardStyle]}>
+            <Text style={s.label}>JD URL/텍스트</Text>
+            <TextInput
+              style={[s.input,{ minHeight:110, textAlignVertical:'top' }]}
+              placeholder="JD를 붙여넣으세요"
+              placeholderTextColor={TOKENS.sub}
+              value={settings.jdText}
+              onChangeText={(t)=>setSettings({ jdText: t })}
+              multiline
+            />
+
+            <View style={{ height:8 }} />
+            <Button label="키워드 추출" onPress={extractKeywords} variant='secondary' />
+
+            {!!keywords.length && (
+              <View style={s.row}>
+                {keywords.map(k => <Chip key={k} label={k} />)}
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* ===== CTA ===== */}
+        <Button label="세트 시작하기" onPress={start} disabled={loading} />
+        {loading && <ActivityIndicator style={{ marginTop: 8 }} />}
+      </ScrollView>
+    </SafeAreaView>
   );
 };
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: 'white' },
-  appbar: { height: 44, flexDirection:'row', justifyContent:'space-between', alignItems:'center' },
-  card: { backgroundColor: '#F3F4F6', borderRadius: 12, padding: 12, borderWidth:1, borderColor:'#E5E7EB', marginTop:12 },
-  label: { fontSize:12, color:'#111827' },
-  input: { borderWidth:1, borderColor:'#E5E7EB', borderRadius:12, padding:12, backgroundColor:'#fff', marginTop:8 },
+const s = StyleSheet.create({
+  appbar: {
+    height: 40,
+    flexDirection:'row',
+    justifyContent:'space-between',
+    alignItems:'center',
+    paddingHorizontal: 2,
+  },
+  brand: { fontWeight:'800', letterSpacing: 1, color: TOKENS.label },
+  proBadge: { fontSize:12, fontWeight:'700', color: TOKENS.label },
+
+  label: { fontSize:12, color: TOKENS.label },
+  input: {
+    borderWidth:1, borderColor: TOKENS.border, borderRadius: 12,
+    padding: 12, backgroundColor: '#fff', marginTop: 8, color: TOKENS.label,
+  },
+
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
-  chip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, borderWidth: 1, borderColor: '#e5e7eb', marginRight: 8, marginTop: 8 },
-  chipText: { fontSize: 12, color: '#111827' },
-  segmented: { flexDirection: 'row', borderWidth:1, borderColor:'#E5E7EB', borderRadius:12, overflow:'hidden', marginTop:8 },
-  segment: { flex:1, paddingVertical:10, alignItems:'center', backgroundColor:'#fff' },
-  segmentActive: { backgroundColor:'#111827' },
-  segmentText: { fontSize:13, color:'#111827' },
-  segmentTextActive: { color:'#fff', fontWeight:'600' },
-  btn: { backgroundColor: '#111827', height:48, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18 },
-  btnSecondary: { backgroundColor:'#fff', borderWidth:1, borderColor:'#E5E7EB' },
-  btnText: { color: 'white', fontSize: 16, fontWeight: '600' },
-  btnTextSecondary: { color:'#111827' },
+  chip: {
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14,
+    borderWidth: 1, borderColor: TOKENS.border, backgroundColor: TOKENS.cardBg,
+  },
+  chipText: { fontSize: 12, color: TOKENS.label },
+
+  segmented: {
+    flexDirection: 'row',
+    borderWidth: 1, borderColor: TOKENS.border,
+    borderRadius: 12, overflow: 'hidden', marginTop: 8,
+    backgroundColor: TOKENS.cardBg,
+  },
+  segment: { flex:1, paddingVertical: 10, alignItems:'center', backgroundColor: TOKENS.cardBg },
+  segmentActive: { backgroundColor: '#111827' },
+  segmentText: { fontSize: 13, color: TOKENS.label },
+  segmentTextActive: { color:'#fff', fontWeight:'700' },
+
+  btn: {
+    backgroundColor: '#111827', height: 52, borderRadius: 14,
+    alignItems:'center', justifyContent:'center',
+  },
+  btnSecondary: { backgroundColor: TOKENS.cardBg, borderWidth: 1, borderColor: TOKENS.border },
+  btnText: { color:'#fff', fontSize:16, fontWeight:'700' },
+  btnTextSecondary: { color: TOKENS.label },
 });
 
 export default Home;
