@@ -1,6 +1,34 @@
 export type Language = 'ko' | 'en';
 export type Difficulty = 'beginner' | 'intermediate' | 'advanced';
 export type Mode = 'free' | 'pro';
+export type Sentiment = 'positive' | 'neutral' | 'negative';
+export type InterviewLevel = 'Beginner' | 'Intermediate' | 'Advanced';
+
+
+export type QAFeedback = {
+  id: string;
+  question: string;
+  answerSummary: string;
+  score: number;
+  tags: string[];
+  timeSec: number;
+  sentiment: Sentiment;
+  notes?: string;
+};
+
+export type SummaryData = {
+  sessionId: string;
+  startedAt: string;
+  endedAt: string;
+  overallScore: number;
+  level: InterviewLevel;
+  totalQuestions: number;
+  totalSpeakingSec: number;
+  strengths: string[];
+  improvements: string[];
+  tips: string[];
+  qa: QAFeedback[];
+};
 
 export type RootStackParamList = {
   Home: undefined;
