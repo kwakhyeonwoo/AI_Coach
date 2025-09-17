@@ -16,6 +16,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { TOKENS } from '@/theme/tokens';
 import { requestSummary } from '@/services/apiClient';
+import { watchSummary } from '@/services/summaryStore';
+import { requestBuildSummary } from '@/services/summaries';
 // ↑ apiClient에 requestSummary(sessionId: string) 추가 (아래 3번 참고)
 
 // 타입: 기존 types.ts에 정의되어 있지 않다면 아래 인터페이스를 내부에 둬도 됨
@@ -105,20 +107,29 @@ const Summary: React.FC<Props> = ({ route, navigation }) => {
     }).start();
   }, [summary]);
 
+  // useEffect(() => {
+  //   if (preset || !sessionId) return;
+  //   (async () => {
+  //     try {
+  //       setLoading(true);
+  //       const s = await requestSummary(sessionId);
+  //       setSummary(s);
+  //     } catch (e: any) {
+  //       setError(e?.message ?? '요약을 불러오지 못했습니다.');
+  //     } finally {
+  //       setLoading(false);
+  //     }
+  //   })();
+  // }, [sessionId, preset]);
+
   useEffect(() => {
-    if (preset || !sessionId) return;
-    (async () => {
-      try {
-        setLoading(true);
-        const s = await requestSummary(sessionId);
-        setSummary(s);
-      } catch (e: any) {
-        setError(e?.message ?? '요약을 불러오지 못했습니다.');
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [sessionId, preset]);
+    if (!sessionId) return;
+    requestBuildSummary(sessionId).catch((e) => {
+      console.warn('buildSummary error', e);
+      // UI에 토스트/경고 표시해도 좋음
+    });
+  }, [sessionId]);
+
 
   const progressWidth = progress.interpolate({
     inputRange: [0, 100],

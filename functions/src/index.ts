@@ -1,12 +1,11 @@
 // functions/src/index.ts
-import {initializeApp} from "firebase-admin/app";
 import {onRequest} from "firebase-functions/v2/https";
 import {defineSecret} from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
 import OpenAI from "openai";
 export {jdScrape} from "./jdScrape";
-
-initializeApp();
+export {onInterviewAudioFinalized} from './audioProcessor';
+export {buildSummary} from './buildSummary';
 
 const OPENAI_API_KEY = defineSecret("OPENAI_API_KEY");
 

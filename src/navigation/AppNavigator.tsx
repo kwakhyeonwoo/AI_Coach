@@ -36,7 +36,7 @@ function PracticeStack() {
         headerShadowVisible: false,
       }}/>
       <Stack.Screen name="Question" component={Question} />
-      <Stack.Screen name="Summary" component={Summary} />
+      <Stack.Screen name="Summary" component={Summary} options={{title:'면접 요약'}}/>
     </Stack.Navigator>
   );
 }
