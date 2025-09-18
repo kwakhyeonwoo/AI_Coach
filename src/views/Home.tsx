@@ -7,6 +7,8 @@ import { useInterviewVM } from '../viewmodels/InterviewVM';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS } from '@/theme/tokens';
 import { resolveAndExtractJD } from "@/utils/jd";
+import { ensureSessionDoc } from '@/services/sessions';
+import { useNavigation } from '@react-navigation/native';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
@@ -59,9 +61,19 @@ const Home: React.FC<Props> = ({ navigation }) => {
     }
   };  
 
-  const start = async () => {
-    const id = await startNewSession();
-    navigation.navigate('Question', { sessionId: id });
+  const start = async() => {
+    try {
+        const id = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const companyId = (settings.company || 'generic').trim() || 'generic';
+        const role = (settings.role as string) || 'general';
+        const expectedQuestions = 5; // 필요하면 설정값으로 치환
+
+        await ensureSessionDoc(id, companyId, role, expectedQuestions);
+        
+        navigation.navigate('Question', { sessionId: id});
+    } catch (e){
+        console.warn('[Home.start] failed to start session', e);
+    }
   };
 
   const insets = useSafeAreaInsets();

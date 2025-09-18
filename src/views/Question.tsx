@@ -9,6 +9,8 @@ import { useInterviewVM } from '../viewmodels/InterviewVM'; // 기존 settings �
 import { useQuestionVM } from '../viewmodels/useQuestion';
 import { useRecorder } from '../hook/useRecorder';
 import { TOKENS } from '@/theme/tokens';
+import { requestBuildSummary } from '@/services/summaries';
+import { uploadQuestionAudio } from '@/services/uploadAudio';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Question'>;
 
@@ -68,20 +70,48 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
     rec.stop().catch(() => {});
   };
 
+  const sessionId = route.params?.sessionId ?? 'local';
+
   const goNext = async () => {
     if (!rec.audioUri) return;                    // 🔒 오디오 없으면 진행 금지
+    const currentQuestionId = `q${vm.index}`;
+    const questionText = vm.question ?? '';
+
+    try {
+      await uploadQuestionAudio({
+        sessionId,
+        questionId: currentQuestionId,
+        localUri: rec.audioUri,
+        questionText,
+        companyId: (settings.company || 'generic').trim() || 'generic',
+        role: (settings.role as string) || 'general',
+      });
+    } catch(e) {
+      console.warn('[Question.goNext] upload failed', e);
+      return;
+    }
     const res = await vm.next(`[audio] ${rec.audioUri}`);
-    if (res.done) {
-      navigation.replace('Summary', { sessionId: route.params?.sessionId ?? 'local' });
+    if(res.done) {
+      try{
+        await requestBuildSummary(sessionId);
+      } catch (e) {
+        console.warn('buildSummary error', e);
+      }
+      navigation.replace('Summary', { sessionId });
       return;
     }
     rec.clear();
   };
 
   const skipNext = async () => {
-    const res = await vm.next(undefined);         // 스킵만 무오디오 허용
+    const res = await vm.next(undefined);
     if (res.done) {
-      navigation.replace('Summary', { sessionId: route.params?.sessionId ?? 'local' });
+      try {
+        await requestBuildSummary(sessionId);
+      } catch(e) {
+        console.warn('buildSummary error', e);
+      }
+      navigation.replace('Summary', { sessionId });
       return;
     }
     rec.clear();

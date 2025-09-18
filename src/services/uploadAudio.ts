@@ -1,76 +1,58 @@
 // src/services/uploadAudio.ts
-import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { storage, db, ensureAuth } from '@/services/firebase';
+import { ref, uploadBytes, uploadString, getDownloadURL } from 'firebase/storage';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '@/services/firebase'; // initializeApp 된 Firestore 인스턴스
 import * as FileSystem from 'expo-file-system';
 
-// localUri: expo-audio가 만든 파일 경로 (file://...m4a)
 export async function uploadQuestionAudio(params: {
-  uid: string;
   sessionId: string;
   questionId: string;
+  localUri: string;        // file://...
   companyId?: string;
   role?: string;
   questionText?: string;
-  localUri: string; // file://...
 }) {
-  const { uid, sessionId, questionId, companyId = 'generic', role = 'general', questionText, localUri } = params;
+  const { sessionId, questionId, localUri, companyId = 'generic', role = 'general', questionText } = params;
+  const u = await ensureAuth();
 
-  // 1) Blob 변환
-  const res = await fetch(localUri);
-  const blob = await res.blob();
+  const path = `interviews/${u.uid}/${sessionId}/${questionId}.m4a`;
+  const r = ref(storage, path);
 
-  // 2) Storage 경로
-  const storage = getStorage();
-  const path = `interviews/${uid}/${sessionId}/${questionId}.m4a`;
-  const storageRef = ref(storage, path);
+  const metadata = {
+    contentType: 'audio/mp4',                 // m4a는 mp4 컨테이너
+    customMetadata: { uid: u.uid, sessionId, questionId, companyId, role, lang: 'ko-KR' },
+  } as const;
 
-  // 3) 업로드(메타데이터 포함)
-  const task = uploadBytesResumable(storageRef, blob, {
-    contentType: 'audio/m4a',
-    customMetadata: { uid, sessionId, questionId, companyId, role, lang: 'ko-KR' },
-  });
+  // --- 업로드: Blob -> 실패 시 base64 폴백 ---
+  try {
+    const resp = await fetch(localUri);
+    if (!resp.ok) throw new Error(`fetch(${localUri}) failed: ${resp.status}`);
+    const blob = await resp.blob();
+    await uploadBytes(r, blob, metadata);
+  } catch (err: any) {
+    console.warn('[uploadQuestionAudio] blob upload failed, fallback to base64', {
+      code: err?.code, msg: err?.message, srv: err?.customData?.serverResponse,
+    });
+    const base64 = await FileSystem.readAsStringAsync(localUri, { encoding: FileSystem.EncodingType.Base64 });
+    await uploadString(r, base64, 'base64', metadata);
+  }
 
-  await new Promise<void>((resolve, reject) => {
-    task.on(
-      'state_changed',
-      // (progress) => console.log(progress.bytesTransferred / progress.totalBytes),
-      () => {},
-      reject,
-      () => resolve()
-    );
-  });
+  const url = await getDownloadURL(r);
 
-  const downloadURL = await getDownloadURL(storageRef);
-
-  // 4) Firestore QA 문서 초기 저장 (status: uploaded)
-  const qaRef = doc(db, 'sessions', sessionId, 'qa', questionId);
+  // QA 문서 생성/업데이트
   await setDoc(
-    qaRef,
+    doc(db, 'sessions', sessionId, 'qa', questionId),
     {
-      uid,
+      uid: u.uid,
       questionText: questionText ?? null,
       audioPath: path,
-      audioUrl: downloadURL,
+      audioUrl: url,
       status: 'uploaded',
       createdAt: serverTimestamp(),
     },
     { merge: true }
   );
 
-  return { path, downloadURL };
-}
-
-// 세션 생성 (처음 질문 업로드 전에 1회)
-export async function ensureSessionDoc(sessionId: string, uid: string, companyId?: string, role?: string, expectedQuestions?: number) {
-  await setDoc(
-    doc(db, 'sessions', sessionId),
-    {
-      uid, companyId: companyId ?? 'generic', role: role ?? 'general',
-      expectedQuestions: expectedQuestions ?? 3,
-      startedAt: serverTimestamp(),
-      status: 'recording',
-    },
-    { merge: true }
-  );
+  console.log('[uploadQuestionAudio] ok', { sessionId, questionId });
+  return { path, url };
 }
