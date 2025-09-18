@@ -1,4 +1,6 @@
 // src/views/Summary.tsx
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '@/services/firebase';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -97,6 +99,9 @@ const Summary: React.FC<Props> = ({ route, navigation }) => {
   const [error, setError] = useState<string | null>(null);
 
   const progress = useRef(new Animated.Value(0)).current;
+  const [status, setStatus] = useState<'idle'|'loading'|'pending'|'processing'|'ready'|'error'>('loading');
+  const [err, setErr] = useState<string|undefined>();
+  const triggered = useRef(false);
 
   useEffect(() => {
     Animated.timing(progress, {
@@ -107,27 +112,68 @@ const Summary: React.FC<Props> = ({ route, navigation }) => {
     }).start();
   }, [summary]);
 
-  // useEffect(() => {
-  //   if (preset || !sessionId) return;
-  //   (async () => {
-  //     try {
-  //       setLoading(true);
-  //       const s = await requestSummary(sessionId);
-  //       setSummary(s);
-  //     } catch (e: any) {
-  //       setError(e?.message ?? '요약을 불러오지 못했습니다.');
-  //     } finally {
-  //       setLoading(false);
-  //     }
-  //   })();
-  // }, [sessionId, preset]);
-
   useEffect(() => {
     if (!sessionId) return;
     requestBuildSummary(sessionId).catch((e) => {
       console.warn('buildSummary error', e);
       // UI에 토스트/경고 표시해도 좋음
     });
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    setStatus('loading');
+    setErr(undefined);
+    triggered.current = false;
+
+    const unsub = onSnapshot(
+      doc(db, 'summaries', sessionId),
+      async (snap) => {
+        if (!snap.exists()) {
+          // 문서가 없으면 최초 1회 자동 생성 호출
+          setStatus('idle');
+          if (!triggered.current) {
+            triggered.current = true;
+            try { await requestBuildSummary(sessionId); setStatus('pending'); }
+            catch (e:any) { setErr(String(e?.message || e)); setStatus('error'); }
+          }
+          return;
+        }
+
+        const d: any = snap.data();
+        const s = (d.status ?? 'ready') as typeof status;
+        setStatus(s);
+
+        if (s === 'ready') {
+          // 기존 setSummary 로직이 있다면 여기서 변환해서 넣어주세요
+          setSummary({
+            sessionId,
+            startedAt: d.startedAt?.toDate?.()?.toISOString?.() ?? d.startedAt ?? '',
+            endedAt: d.endedAt?.toDate?.()?.toISOString?.() ?? d.endedAt ?? '',
+            overallScore: d.overallScore ?? 0,
+            level: (['Beginner','Intermediate','Advanced'] as const).includes(d.level)
+              ? d.level
+              : (d.overallScore>=80?'Advanced':d.overallScore>=60?'Intermediate':'Beginner'),
+            totalQuestions: d.totalQuestions ?? (Array.isArray(d.qa)? d.qa.length : 0),
+            totalSpeakingSec: d.totalSpeakingSec ?? 0,
+            strengths: d.strengths ?? [],
+            improvements: d.improvements ?? [],
+            tips: d.tips ?? [],
+            qa: (d.qa ?? []).map((q:any) => ({
+              id: q.id ?? '',
+              question: q.question ?? q.questionText ?? '',
+              answerSummary: q.answerSummary ?? '',
+              score: q.score ?? 0,
+              timeSec: q.timeSec ?? q.metrics?.durationSec ?? 0,
+              tags: q.tags ?? [],
+            })),
+          });
+        }
+      },
+      (e) => { setErr(e.message); setStatus('error'); }
+    );
+
+    return () => unsub();
   }, [sessionId]);
 
 

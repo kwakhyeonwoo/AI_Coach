@@ -33,7 +33,9 @@ export async function uploadQuestionAudio(params: {
     console.warn('[uploadQuestionAudio] blob upload failed, fallback to base64', {
       code: err?.code, msg: err?.message, srv: err?.customData?.serverResponse,
     });
-    const base64 = await FileSystem.readAsStringAsync(localUri, { encoding: FileSystem.EncodingType.Base64 });
+    const base64 = await FileSystem.readAsStringAsync(localUri, { 
+        encoding: 'base64' as any,
+     });
     await uploadString(r, base64, 'base64', metadata);
   }
 

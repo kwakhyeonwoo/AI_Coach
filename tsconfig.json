@@ -9,5 +9,10 @@
       "@/*": ["src/*"],
       "@firebase/auth": ["./node_modules/@firebase/auth/dist/index.rn.d.ts"] // ★ 추가
     }
-  }
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "src/**/*.d.ts"
+  ]
 }
