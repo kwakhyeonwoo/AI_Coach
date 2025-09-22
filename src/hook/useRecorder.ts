@@ -4,27 +4,52 @@ import { Alert, Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   useAudioRecorder,
-  RecordingPresets,
   setAudioModeAsync,
   requestRecordingPermissionsAsync,
   getRecordingPermissionsAsync,
 } from 'expo-audio';
+import { Audio } from 'expo-av';
 
 type MeteringStatus = { metering?: number | null };
 
+/** WAV(Linear PCM) 16kHz mono 녹음 옵션 */
+const WAV_RECORDING_OPTIONS: any = {
+  isMeteringEnabled: true,
+  android: {
+    extension: '.wav',
+    // ✅ 최신 enum 이름
+    outputFormat: Audio.AndroidOutputFormat.DEFAULT,
+    audioEncoder: Audio.AndroidAudioEncoder,
+    sampleRate: 16000,
+    numberOfChannels: 1,
+    bitRate: 256000, // 무시될 수 있음
+  },
+  ios: {
+    extension: '.wav',
+    // LINEAR PCM(WAV)
+    outputFormat: Audio.IOSOutputFormat.LINEARPCM,
+    audioQuality: Audio.IOSAudioQuality.LOW,
+    sampleRate: 16000,
+    numberOfChannels: 1,
+    linearPCMBitDepth: 16,
+    linearPCMIsBigEndian: false,
+    linearPCMIsFloat: false,
+  },
+  web: {},
+};
+
 export function useRecorder(preaskKey = 'mic_preask_done_v1') {
   const [isRecording, setIsRecording] = useState(false);
-  const isRecRef = useRef(false);                        // 🔧 최신 녹음 상태 ref
+  const isRecRef = useRef(false);
   useEffect(() => { isRecRef.current = isRecording; }, [isRecording]);
 
   const [remain, setRemain] = useState(90);
   const [audioUri, setAudioUri] = useState<string | undefined>();
   const [level, setLevel] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  
 
   const recorder = useAudioRecorder(
-    { ...RecordingPresets.HIGH_QUALITY, isMeteringEnabled: true },
+    WAV_RECORDING_OPTIONS,
     (st: unknown) => {
       const m = (st as MeteringStatus)?.metering;
       if (typeof m === 'number') {
@@ -59,7 +84,7 @@ export function useRecorder(preaskKey = 'mic_preask_done_v1') {
       });
     }, 1000);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recorder]);                                       // 🔧 isRecording 의존 제거
+  }, [recorder]);
 
   const stop = useCallback(async () => {
     try {
@@ -72,7 +97,7 @@ export function useRecorder(preaskKey = 'mic_preask_done_v1') {
       setIsRecording(false);
       setLevel(0);
     }
-  }, [recorder]);                                       // 🔧 isRecording 의존 제거
+  }, [recorder]);
 
   const askAndToggle = useCallback(async () => {
     try {
@@ -126,7 +151,6 @@ export function useRecorder(preaskKey = 'mic_preask_done_v1') {
     }
   }, [preaskKey, start, stop]);
 
-  // 🔧 언마운트시에만 정리 (이전처럼 deps에 stop 넣지 마세요)
   useEffect(() => {
     return () => {
       if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
@@ -134,18 +158,18 @@ export function useRecorder(preaskKey = 'mic_preask_done_v1') {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  
+
   const clear = useCallback(() => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     setIsRecording(false);
-    setAudioUri(undefined);   // ✅ 이전 파일 제거
-    setRemain(90);            // ✅ 타이머 리셋
-    setLevel(0);              // ✅ 파형 리셋
+    setAudioUri(undefined);
+    setRemain(90);
+    setLevel(0);
   }, []);
 
   return {
     isRecording, remain, audioUri, level,
     askAndToggle, start, stop,
-    clear,                      // ✅ 내보내기
+    clear,
   };
 }

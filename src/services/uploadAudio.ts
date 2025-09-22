@@ -15,11 +15,11 @@ export async function uploadQuestionAudio(params: {
   const { sessionId, questionId, localUri, companyId = 'generic', role = 'general', questionText } = params;
   const u = await ensureAuth();
 
-  const path = `interviews/${u.uid}/${sessionId}/${questionId}.m4a`;
+  const path = `interviews/${u.uid}/${sessionId}/${questionId}.wav`;
   const r = ref(storage, path);
 
   const metadata = {
-    contentType: 'audio/mp4',                 // m4a는 mp4 컨테이너
+    contentType: 'audio/wav',
     customMetadata: { uid: u.uid, sessionId, questionId, companyId, role, lang: 'ko-KR' },
   } as const;
 
