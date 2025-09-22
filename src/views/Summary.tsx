@@ -34,8 +34,6 @@ const getLevelDescription = (level: InterviewLevel, score: number) => {
 };
 
 // --- UI 서브 컴포넌트 ---
-
-// 전체 점수 카드
 const OverallScoreCard: React.FC<{ summary: SummaryData }> = ({ summary }) => {
   const progress = useRef(new Animated.Value(0)).current;
   const scoreColor = summary.overallScore >= 80 ? TOKENS.good : summary.overallScore >= 60 ? TOKENS.warn : TOKENS.bad;
@@ -62,7 +60,6 @@ const OverallScoreCard: React.FC<{ summary: SummaryData }> = ({ summary }) => {
   );
 };
 
-// 강점 및 개선점 카드
 const AnalysisCard: React.FC<{ strengths: string[], improvements: string[] }> = ({ strengths, improvements }) => (
   <View style={styles.card}>
     <Text style={styles.title}>강점 & 개선점</Text>
@@ -73,7 +70,6 @@ const AnalysisCard: React.FC<{ strengths: string[], improvements: string[] }> = 
   </View>
 );
 
-// 개별 질문 피드백 카드
 const QACard: React.FC<{ qaItem: QAFeedback, index: number }> = ({ qaItem, index }) => {
   const [expanded, setExpanded] = useState(false);
   const onToggle = () => {
@@ -131,15 +127,16 @@ const Summary: React.FC<Props> = ({ route, navigation }) => {
     const unsub = onSnapshot(
       doc(db, 'summaries', sessionId),
       (snap) => {
+        // ✅ snap.exists()로 문서 존재 여부 확인
         if (!snap.exists()) {
-          setStatus('pending');
-          // 최초 1회 생성 요청 (이미 Question 화면에서 호출했지만, 직접 들어온 경우를 대비)
-          requestBuildSummary(sessionId).catch(e => {
-            console.error('requestBuildSummary failed on mount:', e);
-            setError('요약 생성 요청에 실패했습니다.');
-            setStatus('error');
-          });
-          return;
+            setStatus('pending');
+            // 최초 1회 생성 요청 (이미 Question 화면에서 호출했지만, 직접 들어온 경우를 대비)
+            requestBuildSummary(sessionId).catch(e => {
+                console.error('requestBuildSummary failed on mount:', e);
+                setError('요약 생성 요청에 실패했습니다.');
+                setStatus('error');
+            });
+            return;
         }
 
         const data = snap.data() as any;
@@ -165,26 +162,32 @@ const Summary: React.FC<Props> = ({ route, navigation }) => {
 
     return () => unsub();
   }, [sessionId]);
-
+  
+  // ✅ 렌더링 로직을 더 단순하게 수정
   const renderContent = () => {
-    if (status === 'loading' || status === 'pending') {
-      return (
-        <View style={styles.center}>
-          <ActivityIndicator />
-          <Text style={styles.message}>요약을 생성 중입니다...</Text>
-        </View>
-      );
-    }
-    if (status === 'error' || error) {
-      return (
-        <View style={styles.center}>
-          <MaterialCommunityIcons name="alert-circle-outline" size={48} color={TOKENS.bad} />
-          <Text style={styles.message}>오류 발생</Text>
-          <Text style={styles.sub}>{error}</Text>
-        </View>
-      );
-    }
-    if (status === 'ready' && summary) {
+      // 1. 에러가 발생했다면 에러 메시지 표시
+      if (error) {
+          return (
+              <View style={styles.center}>
+                  <MaterialCommunityIcons name="alert-circle-outline" size={48} color={TOKENS.bad} />
+                  <Text style={styles.message}>오류 발생</Text>
+                  <Text style={styles.sub}>{error}</Text>
+              </View>
+          );
+      }
+      
+      // 2. summary 데이터가 아직 없으면 로딩 메시지 표시
+      //    (status가 loading, pending, 또는 ready여도 데이터가 없으면 이 부분을 통과)
+      if (!summary) {
+          return (
+              <View style={styles.center}>
+                  <ActivityIndicator />
+                  <Text style={styles.message}>요약을 생성 중입니다. 잠시만 기다려주세요.</Text>
+              </View>
+          );
+      }
+
+      // 3. summary 데이터가 완전히 준비되면 요약본 표시
       return (
         <ScrollView contentContainerStyle={styles.scroll}>
           <OverallScoreCard summary={summary} />
@@ -195,12 +198,6 @@ const Summary: React.FC<Props> = ({ route, navigation }) => {
           <View style={{ height: 40 }} />
         </ScrollView>
       );
-    }
-    return (
-      <View style={styles.center}>
-        <Text style={styles.message}>요약 데이터가 없습니다.</Text>
-      </View>
-    );
   };
 
   return (
@@ -210,17 +207,17 @@ const Summary: React.FC<Props> = ({ route, navigation }) => {
   );
 };
 
-// --- 스타일 ---
+// ... (스타일과 다른 컴포넌트들은 그대로 유지)
 const Chip: React.FC<{ label: string; icon?: keyof typeof MaterialCommunityIcons.glyphMap; color?: string }> = ({ label, icon, color = TOKENS.sub }) => (
-  <View style={[styles.chip, { backgroundColor: `${color}1A` }]}>
-    {icon && <MaterialCommunityIcons name={icon} size={16} color={color} />}
-    <Text style={[styles.chipText, { color }]}>{label}</Text>
-  </View>
+    <View style={[styles.chip, { backgroundColor: `${color}1A` }]}>
+      {icon && <MaterialCommunityIcons name={icon} size={16} color={color} />}
+      <Text style={[styles.chipText, { color }]}>{label}</Text>
+    </View>
 );
 const ChipList: React.FC<{ items: string[]; icon?: keyof typeof MaterialCommunityIcons.glyphMap; color?: string }> = ({ items, icon, color }) => (
-  <View style={styles.tagRow}>
-    {items.map((txt, i) => <Chip key={`${txt}-${i}`} label={txt} icon={icon} color={color} />)}
-  </View>
+    <View style={styles.tagRow}>
+      {items.map((txt, i) => <Chip key={`${txt}-${i}`} label={txt} icon={icon} color={color} />)}
+    </View>
 );
 
 const styles = StyleSheet.create({
@@ -228,14 +225,13 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
   scroll: { padding: TOKENS.gap, gap: TOKENS.gap },
   message: { fontSize: 16, color: TOKENS.label, marginTop: 12 },
-  card: { 
+  card: {
     backgroundColor: TOKENS.cardBg,
-    borderColor: TOKENS.border,
-    borderWidth: StyleSheet.hairlineWidth,
     borderRadius: TOKENS.cardRadius,
-    padding: TOKENS.gap,
-    marginBottom: TOKENS.gap,
-   }, // 기존 스타일과 유사하게 채워주세요
+    padding: 16,
+    borderWidth: 1,
+    borderColor: TOKENS.border,
+  },
   score: { fontSize: 48, fontWeight: 'bold', color: TOKENS.label },
   scoreTotal: { fontSize: 24, color: TOKENS.sub, fontWeight: 'normal' },
   sub: { fontSize: 14, color: TOKENS.sub, marginTop: 4 },
@@ -254,5 +250,5 @@ const styles = StyleSheet.create({
   subTitle: { fontWeight: '600', color: TOKENS.label, marginTop: 8, marginBottom: 4 },
   followUp: { fontSize: 13, color: TOKENS.sub, lineHeight: 20, marginLeft: 4 },
 });
-
+  
 export default Summary;
