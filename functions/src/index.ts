@@ -3,7 +3,7 @@ import {onRequest} from "firebase-functions/v2/https";
 import {defineSecret} from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
 import OpenAI from "openai";
-export {jdScrape} from "./jdScrape";
+export {parseJdFromUrl} from "./jdScrape";
 export {onInterviewAudioFinalized} from './audioProcessor';
 export {buildSummary} from './buildSummary';
 

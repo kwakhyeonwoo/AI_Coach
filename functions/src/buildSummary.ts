@@ -57,15 +57,45 @@ export const buildSummary = onRequest(
         throw new Error(`No QA documents found for session: ${sessionId}`);
       }
 
+      const isProSession = sessionData.isPro === true && sessionData.jdKeywords?.length > 0;
+      const jdKeywords = isProSession ? sessionData.jdKeywords : [];
+
       // ✅ 2. 시스템 프롬프트를 JSON 입/출력에 맞게 수정하고 ID 보존을 명확히 지시
       const systemPrompt = `
-        You are an expert AI interview coach. I will provide a JSON array of interview data. Analyze it and return a single JSON object with a comprehensive evaluation.
-        The final JSON object MUST have the following structure: { "overallScore": number, "level": "Beginner" | "Intermediate" | "Advanced", "strengths": string[], "improvements": string[], "tips": string[], "qa": { "id": string, "questionText": string, "answerSummary": string, "score": number, "tags": string[], "sentiment": "positive" | "neutral" | "negative" }[] }.
+        You are an expert AI interview coach. I will provide interview data in JSON format. Your task is to analyze it and return a single JSON evaluation object.
+        
+        ${isProSession 
+          ? `// PRO MODE: This is a Pro session. Evaluate based on the provided JD keywords.
+             - Scoring Formula: overall = Σ(score_dim_i × weight_i_jd) + α × keyword_coverage + β × metric_specificity
+             - α (keyword_coverage): For each answer, check if any of these JD keywords are mentioned: [${jdKeywords.join(', ')}].
+             - β (metric_specificity): For each answer, check if it contains specific numbers, KPIs, or metrics.`
+          : `// FREE MODE: This is a Free session. Evaluate based on general best practices.`
+        }
+
+        The final JSON object MUST have the following structure: 
+        { 
+          "overallScore": number, 
+          "level": "Beginner" | "Intermediate" | "Advanced", 
+          "strengths": string[], 
+          "improvements": string[], 
+          "tips": string[], 
+          "qa": { 
+            "id": string, 
+            "questionText": string, 
+            "answerSummary": string, 
+            "modelAnswer": string,
+            "feedback": string, // 👈 Pro 피드백을 담을 필드
+            "score": number, 
+            "tags": string[], 
+            "jdKeywordCoverage": boolean, // 👈 JD 키워드 포함 여부
+            "metricSpecificity": boolean  // 👈 KPI 포함 여부
+          }[] 
+        }.
+        
         - All text must be in Korean.
-        - The "qa" array you return MUST contain an object for EVERY question in the input JSON.
-        - Preserve the original "id" and "questionText" for each item in the "qa" array. Do not skip any questions.
-        - If a transcript is "(답변 스킵됨)", reflect this in your summary and assign a low score.
-        - 'strengths', 'improvements', 'tips' must each be an array of 3 short, actionable Korean sentences.
+        - The "qa" array MUST contain an object for EVERY question in the input.
+        - Preserve the original "id" and "questionText" for each item.
+        - For Pro sessions, the "feedback" should explicitly mention how well the answer aligns with the JD keywords.
       `;
 
       // ✅ 3. 사용자 프롬프트에 단순 텍스트 대신 JSON 문자열을 전달
@@ -79,7 +109,7 @@ export const buildSummary = onRequest(
         Q&A List (JSON):
         ${JSON.stringify(qaListForAI, null, 2)}
       `;
-
+      
       logger.info(`[buildSummary] Calling OpenAI for session: ${sessionId}`);
       const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
       const completion = await openai.chat.completions.create({

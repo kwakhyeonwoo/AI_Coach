@@ -1,20 +1,38 @@
 // src/utils/jd.ts
 // JD URL/텍스트 → {text, keywords} 로 변환
 
-export type JDRole = "iOS" | "Android" | "Frontend" | "Backend" | "Data";
-export type JDExtractOptions = {
-  endpoint?: string;   // Functions URL (없으면 환경변수 사용)
-  topK?: number;       // 키워드 최대 개수
-  timeoutMs?: number;  // 네트워크 타임아웃
-};
-
-const DEFAULT_TOPK = 12;
+import { getFunctions, httpsCallable } from 'firebase/functions'; // ✅ Firebase Functions import 추가
+import type { JDRole, JDExtractOptions } from '@/models/types'; // ✅ 타입 경로 수정 (프로젝트에 맞게)
 
 // Expo에서 .env에 넣어두면 빌드 타임에 주입됨
 // EX) EXPO_PUBLIC_JD_SCRAPE_URL=https://asia-northeast3-<project-id>.cloudfunctions.net/jdScrape
 const ENV_ENDPOINT = process.env.EXPO_PUBLIC_JD_SCRAPE_URL;
 
 const URL_RE = /^https?:\/\//i;
+const DEFAULT_TOPK = 12;
+
+async function extractKeywordsViaCloudFunction(
+  url: string,
+  sessionId: string // Home.tsx에서 세션 ID를 전달받습니다.
+): Promise<{ text: string; keywords: string[] }> {
+  
+  const functions = getFunctions(undefined, "asia-northeast3");
+  const parseJd = httpsCallable(functions, 'parseJdFromUrl');
+
+  try {
+    const result = await parseJd({ url, sessionId });
+    const data = result.data as { success: boolean; keywords: string[] };
+
+    if (data.success) {
+      return { text: url, keywords: data.keywords || [] };
+    } else {
+      throw new Error("Cloud Function returned success: false.");
+    }
+  } catch (error) {
+    console.error("Error calling parseJdFromUrl function:", error);
+    throw new Error("URL에서 키워드를 추출하는 데 실패했습니다.");
+  }
+}
 
 // 불용어(한/영)
 const KO_STOP = new Set([
@@ -145,17 +163,21 @@ export function extractKeywordsFromJD(text: string, role: JDRole, topK = DEFAULT
   return uniq;
 }
 
-// ───────── 메인 엔트리 ─────────
 export async function resolveAndExtractJD(
   input: string,
   role: JDRole,
+  sessionId: string, // ✅ Home.tsx에서 세션 ID를 받습니다.
   opts: JDExtractOptions = {}
 ): Promise<{ text: string; keywords: string[] }> {
-  let text = (input || "").trim();
+  
+  const text = (input || "").trim();
 
   if (URL_RE.test(text)) {
-    text = await fetchJdText(text, opts.endpoint, opts.timeoutMs);
+    // URL이면 Cloud Function 호출
+    return await extractKeywordsViaCloudFunction(text, sessionId);
+  } else {
+    // 텍스트이면 기존 로직 사용
+    const keywords = extractKeywordsFromJD(text, role, opts.topK);
+    return { text, keywords };
   }
-  const keywords = extractKeywordsFromJD(text, role, opts.topK ?? DEFAULT_TOPK);
-  return { text, keywords };
 }

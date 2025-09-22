@@ -1,8 +1,8 @@
 // src/screens/Home.tsx
-import React, { useState } from 'react';
-import { View, Text, Pressable, StyleSheet, ActivityIndicator, TextInput, ScrollView } from 'react-native';
+import React, { useRef, useState } from 'react';
+import { View, Text, Pressable, StyleSheet, ActivityIndicator, TextInput, ScrollView, Alert } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { RootStackParamList, Mode } from '../models/types';
+import type { RootStackParamList, Mode, JDRole } from '../models/types';
 import { useInterviewVM } from '../viewmodels/InterviewVM';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS } from '@/theme/tokens';
@@ -45,17 +45,22 @@ const Home: React.FC<Props> = ({ navigation }) => {
   const [keywords, setKeywords] = useState<string[]>(settings.jdKeywords || []);
   const [extracting, setExtracting] = useState(false);
 
+  const sessionIdRef = useRef(`local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  
   const extractKeywords = async () => {
     const raw = (settings.jdText || "").trim();
     if (!raw) return;
     setExtracting(true);
     try {
-        const { text, keywords } = await resolveAndExtractJD(raw, settings.role as any, {
-        // endpoint를 .env에 EXPO_PUBLIC_JD_SCRAPE_URL로 넣었다면 옵션 필요 없음
-        topK: 10
-        });
+        const { text, keywords } = await resolveAndExtractJD (
+            raw, 
+            settings.role as JDRole,
+            sessionIdRef.current
+        );
         setSettings({ jdText: text, jdKeywords: keywords });
         setKeywords(keywords);
+    } catch(e:any) {
+        Alert.alert("오류", e.message || "키워드 추출 중 오류 발생");
     } finally {
         setExtracting(false);
     }
@@ -63,7 +68,7 @@ const Home: React.FC<Props> = ({ navigation }) => {
 
   const start = async() => {
     try {
-        const id = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const id = sessionIdRef.current;
         const companyId = (settings.company || 'generic').trim() || 'generic';
         const role = (settings.role as string) || 'general';
         const expectedQuestions = 5; // 필요하면 설정값으로 치환

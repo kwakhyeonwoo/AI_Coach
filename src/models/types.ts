@@ -4,6 +4,13 @@ export type Mode = 'free' | 'pro';
 export type Sentiment = 'positive' | 'neutral' | 'negative';
 export type InterviewLevel = 'Beginner' | 'Intermediate' | 'Advanced';
 
+export type JDRole = "iOS" | "Android" | "Frontend" | "Backend" | "Data";
+
+export type JDExtractOptions = {
+  endpoint?: string;   // Functions URL (없으면 환경변수 사용)
+  topK?: number;       // 키워드 최대 개수
+  timeoutMs?: number;  // 네트워크 타임아웃
+};
 
 export type QAFeedback = {
   id: string;
