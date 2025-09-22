@@ -10,8 +10,10 @@ import { useInterviewVM } from '../viewmodels/InterviewVM';
 import { useQuestion } from '../viewmodels/useQuestion';
 import { useRecorder } from '../hook/useRecorder';
 import { TOKENS } from '@/theme/tokens';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { requestBuildSummary } from '@/services/summaries';
 import { uploadQuestionAudio } from '@/services/uploadAudio';
+import { db, ensureAuth } from '@/services/firebase';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Question'>;
 
@@ -63,59 +65,71 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
   }, [vm.index]);
 
   const sessionId = route.params?.sessionId ?? 'local';
+  const isLast = vm.index >= vm.maxQ;
+
+  // ✅ 답변/스킵을 Firestore에 기록하는 로직을 분리하여 재사용
+  const recordAnswer = async (audioUri?: string) => {
+    const u = await ensureAuth();
+    const questionId = `q${vm.index}`;
+    const qaRef = doc(db, 'sessions', sessionId, 'qa', questionId);
+
+    if (audioUri) {
+      // 답변이 있는 경우: 오디오 업로드
+      await uploadQuestionAudio({
+        sessionId, questionId, localUri: audioUri,
+        questionText: vm.question ?? '',
+        companyId: (settings.company || 'generic').trim() || 'generic',
+        role: (settings.role as string) || 'general',
+      });
+    } else {
+      // 답변이 없는 경우 (스킵): Firestore에 스킵 기록
+      await setDoc(qaRef, {
+        uid: u.uid,
+        questionText: vm.question ?? '',
+        transcript: '(답변 스킵됨)',
+        status: 'skipped', // 'skipped' 상태 추가
+        createdAt: serverTimestamp(),
+      }, { merge: true });
+    }
+  };
 
   const goNext = async () => {
     if (isSubmitting || vm.loading || !rec.audioUri) return;
-
     setIsSubmitting(true);
-    const isLast = vm.index >= vm.maxQ;
 
     try {
-      if (isLast) {
+      await recordAnswer(rec.audioUri);
+      const res = await vm.next(`[audio] ${rec.audioUri}`);
+      if (isLast || res.done) {
         navigation.replace('Summary', { sessionId });
-
-        await uploadQuestionAudio({
-          sessionId,
-          questionId: `q${vm.index}`,
-          localUri: rec.audioUri,
-          questionText: vm.question ?? '',
-          companyId: (settings.company || 'generic').trim() || 'generic',
-          role: (settings.role as string) || 'general',
-        });
-        await requestBuildSummary(sessionId);
-
+        requestBuildSummary(sessionId).catch(e => console.warn('buildSummary error', e));
       } else {
-        await uploadQuestionAudio({
-          sessionId,
-          questionId: `q${vm.index}`,
-          localUri: rec.audioUri,
-          questionText: vm.question ?? '',
-          companyId: (settings.company || 'generic').trim() || 'generic',
-          role: (settings.role as string) || 'general',
-        });
-        await vm.next(`[audio] ${rec.audioUri}`);
         rec.clear();
-        setIsSubmitting(false);
       }
     } catch (e) {
-      console.error('Error in goNext:', e);
-      setIsSubmitting(false);
+      console.warn('[Question.goNext] failed', e);
+    } finally {
+      if (!isLast) setIsSubmitting(false);
     }
   };
 
   const skipNext = async () => {
     if (isSubmitting || vm.loading) return;
-
     setIsSubmitting(true);
-    const isLast = vm.index >= vm.maxQ;
-    const res = await vm.next(undefined);
 
-    if (isLast || res.done) {
+    try {
+      await recordAnswer(undefined); // audioUri 없이 호출하여 스킵 기록
+      const res = await vm.next(undefined);
+      if (isLast || res.done) {
         navigation.replace('Summary', { sessionId });
-        requestBuildSummary(sessionId).catch(e => console.error('Error requesting summary on skip:', e));
-    } else {
+        requestBuildSummary(sessionId).catch(e => console.warn('buildSummary error on skip', e));
+      } else {
         rec.clear();
-        setIsSubmitting(false);
+      }
+    } catch(e) {
+      console.warn('skipNext error', e);
+    } finally {
+      if (!isLast) setIsSubmitting(false);
     }
   };
 
@@ -127,17 +141,11 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
     borderColor: TOKENS.border,
   } as const;
 
-  const isLast = vm.index >= vm.maxQ;
-
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: TOKENS.bg }} edges={['top','left','right']}>
       <ScrollView
-        contentInsetAdjustmentBehavior={Platform.OS === 'ios' ? 'automatic' : 'never'}
         contentContainerStyle={{
-          paddingTop: 6,
-          paddingHorizontal: TOKENS.gap,
-          paddingBottom: insets.bottom + 24,
-          gap: 16,
+          paddingTop: 6, paddingHorizontal: TOKENS.gap, paddingBottom: insets.bottom + 24, gap: 16,
         }}
         keyboardShouldPersistTaps="handled"
       >
@@ -148,41 +156,28 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
         <View style={styles.progress}><View style={[styles.progressFill, { width: `${vm.progress * 100}%` }]} /></View>
 
         <View style={[cardStyle]}>
-          <Text style={styles.q}>
-            {vm.question || (vm.loading ? '질문 생성 중…' : '질문을 불러오세요')}
-          </Text>
+          <Text style={styles.q}>{vm.question || (vm.loading ? '질문 생성 중…' : '질문을 불러오세요')}</Text>
           <View style={styles.tagRow}>
             {vm.tags.map((t: string) => (
-              <View key={t} style={styles.tag}>
-                <Text style={styles.tagText}>{t}</Text>
-                </View>
+              <View key={t} style={styles.tag}><Text style={styles.tagText}>{t}</Text></View>
             ))}
           </View>
         </View>
 
         <View style={[cardStyle, { alignItems: 'center', justifyContent: 'center', gap: 12, minHeight: 280 }]}>
           <Text style={{ color: TOKENS.sub }}>{rec.remain}s</Text>
-          <Animated.View
-            style={[
-              styles.micOuter,
-              rec.isRecording && { borderColor: '#FACC15', shadowOpacity: 0.35 },
+          <Animated.View style={[ styles.micOuter, rec.isRecording && { borderColor: '#FACC15', shadowOpacity: 0.35 },
               { transform: [{ scale: rec.isRecording
-                ? pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1 + rec.level * 0.25 + 0.05] })
-                : 1 }]},
-            ]}
-          >
+                ? pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1 + rec.level * 0.25 + 0.05] }) : 1 }]},
+            ]}>
             <Pressable onPress={rec.askAndToggle} style={({ pressed }) => [styles.micInner, pressed && { opacity: 0.9 }]}>
-              <MaterialCommunityIcons
-                name={rec.isRecording ? 'microphone' : 'microphone-outline'}
-                size={40}
-                color="#FACC15"
-              />
+              <MaterialCommunityIcons name={rec.isRecording ? 'microphone' : 'microphone-outline'} size={40} color="#FACC15" />
             </Pressable>
           </Animated.View>
+
           <Waveform level={rec.level} isRecording={rec.isRecording} />
-          <Text style={{ color: TOKENS.sub }}>
-            {rec.isRecording ? '녹음 중…' : (rec.audioUri ? '완료' : '대기 중')}
-          </Text>
+
+          <Text style={{ color: TOKENS.sub }}>{rec.isRecording ? '녹음 중…' : (rec.audioUri ? '완료' : '대기 중')}</Text>
         </View>
 
         <View style={{ flexDirection: 'row', gap: 12 }}>
@@ -193,11 +188,7 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
         <Pressable
           onPress={goNext}
           disabled={vm.loading || !rec.audioUri || isSubmitting}
-          style={({ pressed }) => [
-            styles.cta,
-            pressed && { opacity: 0.88 },
-            (vm.loading || !rec.audioUri || isSubmitting) && { opacity: 0.5 }
-          ]}
+          style={({ pressed }) => [ styles.cta, pressed && { opacity: 0.88 }, (vm.loading || !rec.audioUri || isSubmitting) && { opacity: 0.5 } ]}
         >
           {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.ctaText}>{isLast ? '결과 보기' : '다음 질문'}</Text>}
         </Pressable>
