@@ -1,4 +1,4 @@
-// 질문 흐름
+// src/viewmodels/useQuestion.tsx
 import { useCallback, useMemo, useState, useRef } from 'react';
 import type { QA, InterviewSettings } from '../models/types';
 import { requestFirstQuestion, requestNextQuestion } from '../services/apiClient';
@@ -7,11 +7,8 @@ import { extractTagsFromQuestion } from '@/utils/extractTags';
 type Options = { maxQ?: number };
 type NextResult = { done?: boolean; question?: string };
 
-function normQ(s: string) {
-  return s.replace(/[^\p{L}\p{N}]/gu,'').toLowerCase();
-}
-
-export function useQuestionVM(settings: InterviewSettings, opts: Options = {}) {
+// ✅ 함수 이름을 useQuestion으로 통일합니다.
+export function useQuestion(settings: InterviewSettings, opts: Options = {}) {
   const maxQ = opts.maxQ ?? 5;
 
   const [index, setIndex] = useState(1);
@@ -21,23 +18,6 @@ export function useQuestionVM(settings: InterviewSettings, opts: Options = {}) {
   const [followups, setFollowups] = useState(0);
   const [tags, setTags] = useState<string[]>([]);
   const seenRef = useRef<Set<string>>(new Set());
-
-  async function fetchUnique(
-    fetcher: () => Promise<{ question?: string; done?: boolean }>,
-    tries = 3
-  ): Promise<{ question?: string; done?: boolean }> {
-    for (let i = 0; i < tries; i++) {
-      const res = await fetcher();
-      if (!res.question) return res;
-      const sig = normQ(res.question);
-      if (!seenRef.current.has(sig)) {
-        seenRef.current.add(sig);
-        return res;
-      }
-      // 중복이면 루프 계속 → 다음 시도에서 새 질문 받도록
-    }
-    return { question: undefined };
-  }
 
   const progress = useMemo(() => Math.min(1, (index - 1) / maxQ), [index, maxQ]);
 
@@ -60,7 +40,7 @@ export function useQuestionVM(settings: InterviewSettings, opts: Options = {}) {
       setHistory(newHist);
       setLoading(true);
       try {
-        const res = await requestNextQuestion(settings, newHist, { maxQ }); // fetchUnique부분 추가 
+        const res = await requestNextQuestion(settings, newHist, { maxQ });
         if (res.done) return { done: true };
         if (res.question) {
           setQuestion(res.question);
@@ -82,9 +62,7 @@ export function useQuestionVM(settings: InterviewSettings, opts: Options = {}) {
   }, []);
 
   return {
-    // state
     maxQ, index, loading, question, history, followups, progress, tags,
-    // actions
     loadFirst, next, resetCurrentAnswer,
   };
 }

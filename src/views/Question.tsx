@@ -1,12 +1,13 @@
-// src/screens/Question.tsx
-import React, { useEffect, useRef } from 'react';
+// src/views/Question.tsx
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Pressable, ActivityIndicator, Animated, Easing, Platform, ScrollView, StyleSheet, Text } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../models/types';
-import { useInterviewVM } from '../viewmodels/InterviewVM'; // 기존 settings 보유
-import { useQuestionVM } from '../viewmodels/useQuestion';
+import { useInterviewVM } from '../viewmodels/InterviewVM';
+// ✅ 1. 'useQuestionVM'이 아닌 'useQuestion'을 import 합니다.
+import { useQuestion } from '../viewmodels/useQuestion';
 import { useRecorder } from '../hook/useRecorder';
 import { TOKENS } from '@/theme/tokens';
 import { requestBuildSummary } from '@/services/summaries';
@@ -25,21 +26,22 @@ const SmallBtn: React.FC<{ label: string; onPress?: () => void; disabled?: boole
 
 const Question: React.FC<Props> = ({ route, navigation }) => {
   const { settings } = useInterviewVM();
-  const vm = useQuestionVM(settings, { maxQ: 5 });
+  // ✅ 2. 'useQuestion' 훅을 호출합니다.
+  const vm = useQuestion(settings, { maxQ: 5 });
   const rec = useRecorder('mic_preask_done_v1');
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const insets = useSafeAreaInsets();
   const pulse = useRef(new Animated.Value(0)).current;
-  const didInit = useRef(false) // 최초 1회 로드 가드 
+  const didInit = useRef(false)
 
-  // 첫 질문 로드
   useEffect(() => {
     if(didInit.current) return;
     didInit.current = true;
     vm.loadFirst();
   }, [vm.loadFirst]);
 
-  // 녹음 중일 때 펄스 애니메이션
   useEffect(() => {
     if (rec.isRecording) {
       const loop = Animated.loop(
@@ -57,64 +59,64 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
   }, [rec.isRecording, pulse]);
 
   useEffect(() => {
-    rec.clear();           // audioUri, remain(90s), level, isRecording reset
-  }, [vm.index]);    
-
-  const onNext = async () => {
-    const res = await vm.next(rec.audioUri ? `[audio] ${rec.audioUri}` : undefined);
-    if (res.done) {
-      navigation.replace('Summary', { sessionId: route.params?.sessionId ?? 'local' });
-      return;
-    }
-    // 다음 질문으로 넘어갔으니 현재 녹음 상태 초기화
-    rec.stop().catch(() => {});
-  };
+    rec.clear();
+  }, [vm.index]);
 
   const sessionId = route.params?.sessionId ?? 'local';
 
   const goNext = async () => {
-    if (!rec.audioUri) return;                    // 🔒 오디오 없으면 진행 금지
-    const currentQuestionId = `q${vm.index}`;
-    const questionText = vm.question ?? '';
+    if (isSubmitting || vm.loading || !rec.audioUri) return;
+
+    setIsSubmitting(true);
+    const isLast = vm.index >= vm.maxQ;
 
     try {
-      await uploadQuestionAudio({
-        sessionId,
-        questionId: currentQuestionId,
-        localUri: rec.audioUri,
-        questionText,
-        companyId: (settings.company || 'generic').trim() || 'generic',
-        role: (settings.role as string) || 'general',
-      });
-    } catch(e) {
-      console.warn('[Question.goNext] upload failed', e);
-      return;
-    }
-    const res = await vm.next(`[audio] ${rec.audioUri}`);
-    if(res.done) {
-      try{
+      if (isLast) {
+        navigation.replace('Summary', { sessionId });
+
+        await uploadQuestionAudio({
+          sessionId,
+          questionId: `q${vm.index}`,
+          localUri: rec.audioUri,
+          questionText: vm.question ?? '',
+          companyId: (settings.company || 'generic').trim() || 'generic',
+          role: (settings.role as string) || 'general',
+        });
         await requestBuildSummary(sessionId);
-      } catch (e) {
-        console.warn('buildSummary error', e);
+
+      } else {
+        await uploadQuestionAudio({
+          sessionId,
+          questionId: `q${vm.index}`,
+          localUri: rec.audioUri,
+          questionText: vm.question ?? '',
+          companyId: (settings.company || 'generic').trim() || 'generic',
+          role: (settings.role as string) || 'general',
+        });
+        await vm.next(`[audio] ${rec.audioUri}`);
+        rec.clear();
+        setIsSubmitting(false);
       }
-      navigation.replace('Summary', { sessionId });
-      return;
+    } catch (e) {
+      console.error('Error in goNext:', e);
+      setIsSubmitting(false);
     }
-    rec.clear();
   };
 
   const skipNext = async () => {
+    if (isSubmitting || vm.loading) return;
+
+    setIsSubmitting(true);
+    const isLast = vm.index >= vm.maxQ;
     const res = await vm.next(undefined);
-    if (res.done) {
-      try {
-        await requestBuildSummary(sessionId);
-      } catch(e) {
-        console.warn('buildSummary error', e);
-      }
-      navigation.replace('Summary', { sessionId });
-      return;
+
+    if (isLast || res.done) {
+        navigation.replace('Summary', { sessionId });
+        requestBuildSummary(sessionId).catch(e => console.error('Error requesting summary on skip:', e));
+    } else {
+        rec.clear();
+        setIsSubmitting(false);
     }
-    rec.clear();
   };
 
   const cardStyle = {
@@ -124,6 +126,8 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
     borderWidth: 1,
     borderColor: TOKENS.border,
   } as const;
+
+  const isLast = vm.index >= vm.maxQ;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: TOKENS.bg }} edges={['top','left','right']}>
@@ -137,20 +141,18 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
         }}
         keyboardShouldPersistTaps="handled"
       >
-        {/* 상단 */}
         <View style={styles.topBar}>
           <Text style={styles.badge}>Q {vm.index}/{vm.maxQ}</Text>
           <Text style={styles.badgeAlt}>팔로업 {vm.followups}/2</Text>
         </View>
         <View style={styles.progress}><View style={[styles.progressFill, { width: `${vm.progress * 100}%` }]} /></View>
 
-        {/* 질문 카드 */}
         <View style={[cardStyle]}>
           <Text style={styles.q}>
             {vm.question || (vm.loading ? '질문 생성 중…' : '질문을 불러오세요')}
           </Text>
           <View style={styles.tagRow}>
-            {vm.tags.map(t => (
+            {vm.tags.map((t: string) => (
               <View key={t} style={styles.tag}>
                 <Text style={styles.tagText}>{t}</Text>
                 </View>
@@ -158,10 +160,8 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
           </View>
         </View>
 
-        {/* 녹음 패널 */}
         <View style={[cardStyle, { alignItems: 'center', justifyContent: 'center', gap: 12, minHeight: 280 }]}>
           <Text style={{ color: TOKENS.sub }}>{rec.remain}s</Text>
-
           <Animated.View
             style={[
               styles.micOuter,
@@ -179,35 +179,33 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
               />
             </Pressable>
           </Animated.View>
-
           <Waveform level={rec.level} isRecording={rec.isRecording} />
-
           <Text style={{ color: TOKENS.sub }}>
             {rec.isRecording ? '녹음 중…' : (rec.audioUri ? '완료' : '대기 중')}
           </Text>
         </View>
 
-        {/* 하단 액션 */}
         <View style={{ flexDirection: 'row', gap: 12 }}>
           <SmallBtn label="다시 질문" onPress={() => { /* TODO: 재생성 로직 */ }} />
-          <SmallBtn label="스킵 (1회)" onPress={skipNext} disabled={vm.loading} />
+          <SmallBtn label="스킵 (1회)" onPress={skipNext} disabled={vm.loading || isSubmitting} />
         </View>
 
         <Pressable
           onPress={goNext}
-          disabled={vm.loading || !rec.audioUri}
+          disabled={vm.loading || !rec.audioUri || isSubmitting}
           style={({ pressed }) => [
             styles.cta,
             pressed && { opacity: 0.88 },
-            (vm.loading || !rec.audioUri) && { opacity: 0.5 }
+            (vm.loading || !rec.audioUri || isSubmitting) && { opacity: 0.5 }
           ]}
         >
-          {vm.loading ? <ActivityIndicator /> : <Text style={styles.ctaText}>다음 질문</Text>}
+          {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.ctaText}>{isLast ? '결과 보기' : '다음 질문'}</Text>}
         </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
 };
+
 
 function Waveform({ level, isRecording }: { level: number; isRecording: boolean }) {
   const bars = 18;

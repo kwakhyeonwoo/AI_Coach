@@ -19,7 +19,7 @@ const WAV_RECORDING_OPTIONS: any = {
     extension: '.wav',
     // ✅ 최신 enum 이름
     outputFormat: Audio.AndroidOutputFormat.DEFAULT,
-    audioEncoder: Audio.AndroidAudioEncoder,
+    audioEncoder: Audio.AndroidAudioEncoder.DEFAULT,
     sampleRate: 16000,
     numberOfChannels: 1,
     bitRate: 256000, // 무시될 수 있음

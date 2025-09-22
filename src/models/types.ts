@@ -7,13 +7,15 @@ export type InterviewLevel = 'Beginner' | 'Intermediate' | 'Advanced';
 
 export type QAFeedback = {
   id: string;
-  question: string;
+  questionText: string; // buildSummary에서 questionText로 통일했습니다.
   answerSummary: string;
   score: number;
   tags: string[];
-  timeSec: number;
   sentiment: Sentiment;
-  notes?: string;
+  // --- UI 구현을 위해 추가된 필드 ---
+  modelAnswer?: string; // 모범 답안
+  followUpQuestions?: string[]; // 팔로업 제안 질문
+  timeSec: number; // 답변 시간 (초)
 };
 
 export type SummaryData = {

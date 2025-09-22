@@ -35,8 +35,7 @@ export const onInterviewAudioFinalized = onObjectFinalized(
     const gcsUri = `gs://${obj.bucket}/${name}`;
 
     // ---- 인코딩/샘플레이트 결정 (WAV는 자동 감지에 맡김) ----
-    let encoding: protos.google.cloud.speech.v1.RecognitionConfig.AudioEncoding
-      | undefined;
+    let encoding: protos.google.cloud.speech.v1.RecognitionConfig.AudioEncoding| undefined;
     let sampleRateHertz: number | undefined;
 
     const isWav = /wav/i.test(ctype) || /\.wav$/i.test(name);
@@ -45,8 +44,8 @@ export const onInterviewAudioFinalized = onObjectFinalized(
 
     if (isWav) {
       // 👉 WAV는 헤더에서 자동 감지 (encoding/sampleRate 지정 안 함)
-      encoding = undefined;
-      sampleRateHertz = undefined;
+      encoding = protos.google.cloud.speech.v1.RecognitionConfig.AudioEncoding.LINEAR16;
+      sampleRateHertz = 16000;
     } else if (isMp3) {
       encoding = protos.google.cloud.speech.v1.RecognitionConfig.AudioEncoding.MP3;
     } else if (isOggOpus) {
