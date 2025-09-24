@@ -1,11 +1,24 @@
+// src/views/SessionDetail.tsx
 import React from 'react';
-import { View, Text } from 'react-native';
+import { SafeAreaView, StyleSheet } from 'react-native';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '@/models/types';
+import Summary from './Summary';
+import { TOKENS } from '@/theme/tokens';
 
-export default function SessionDetail() {
+type Props = NativeStackScreenProps<RootStackParamList, 'SessionDetail'>;
+
+export default function SessionDetail({ route }: Props) {
+  const { sessionId } = route.params;
+
   return (
-    <View style={{ flex: 1, padding: 20 }}>
-      <Text style={{ fontSize: 22, fontWeight: '700' }}>SessionDetail</Text>
-      <Text>면접 요약/피드백 화면</Text>
-    </View>
+    <SafeAreaView style={styles.safe}>
+      {/* Summary 재활용 */}
+      <Summary route={{ params: { sessionId } }} navigation={null as any} />
+    </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: TOKENS.bg },
+});

@@ -1,54 +1,117 @@
-// src/screens/History.tsx
-import React, { useState } from 'react';
-import { View, Text, FlatList, StyleSheet } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, Pressable, FlatList, ActivityIndicator, StyleSheet } from 'react-native';
+import { collection, query, where, orderBy, onSnapshot, getDoc, doc } from 'firebase/firestore';
+import { db, ensureAuth } from '@/services/firebase';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '@/models/types';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { TOKENS } from '@/theme/tokens';
 
-export default function History() {
-  // ✅ 더미 데이터 (추후 Firestore나 AsyncStorage에서 불러올 수도 있음)
-  const [sessions, setSessions] = useState([
-    { id: '1', title: 'iOS 면접 연습', date: '2025-09-20', result: '성공' },
-    { id: '2', title: 'Android 코딩테스트', date: '2025-09-18', result: '보통' },
-    { id: '3', title: 'Frontend 모의 인터뷰', date: '2025-09-15', result: '아쉬움' },
-  ]);
+type Props = NativeStackScreenProps<RootStackParamList, 'History'>;
 
-  const renderItem = ({ item }: { item: typeof sessions[0] }) => (
-    <View style={styles.card}>
-      <Text style={styles.title}>{item.title}</Text>
-      <Text style={styles.date}>{item.date}</Text>
-      <Text style={styles.result}>결과: {item.result}</Text>
-    </View>
-  );
+export default function History({ navigation }: Props) {
+  const [loading, setLoading] = useState(true);
+  const [sessions, setSessions] = useState<any[]>([]);
+
+  useEffect(() => {
+    let unsub: (() => void) | null = null;
+
+    ensureAuth().then((u) => {
+      const q = query(
+        collection(db, 'sessions'),
+        where('uid', '==', u.uid),
+        orderBy('startedAt', 'desc')
+      );
+
+      unsub = onSnapshot(q, async (snap) => {
+        const items = await Promise.all(
+          snap.docs.map(async (d) => {
+            const data = d.data();
+            const sessionId = d.id;
+
+            // summaries/{sessionId} 문서 가져오기
+            const summaryRef = doc(db, 'summaries', sessionId);
+            const summarySnap = await getDoc(summaryRef);
+            const summaryData = summarySnap.exists() ? summarySnap.data() : null;
+
+            return {
+              id: sessionId,
+              ...data,
+              overallScore: summaryData?.overallScore ?? null,
+              avgResponseTime: summaryData?.avgResponseTime ?? null,
+              mode: data.mode ?? 'free',
+            };
+          })
+        );
+
+        setSessions(items);
+        setLoading(false);
+      });
+    });
+
+    return () => {
+      if (unsub) unsub();
+    };
+  }, []);
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.header}>History</Text>
-      <Text style={styles.sub}>지난 세션 목록</Text>
+    <SafeAreaView style={s.safe}>
+      <Text style={s.header}>연습 기록</Text>
 
-      <FlatList
-        data={sessions}
-        renderItem={renderItem}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={{ paddingBottom: 20 }}
-      />
-    </View>
+      {loading ? (
+        <View style={s.center}><ActivityIndicator /></View>
+      ) : !sessions.length ? (
+        <View style={s.center}><Text style={s.empty}>연습 기록이 없습니다.</Text></View>
+      ) : (
+        <FlatList
+          data={sessions}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={{ padding: 16, gap: 12 }}
+          renderItem={({ item }) => {
+            const scoreLabel = item.overallScore != null ? `${item.overallScore}점` : '-점';
+            const dateStr = item.startedAt?.toDate?.().toLocaleString?.() ?? '시작 시간 없음';
+
+            return (
+              <Pressable
+                style={s.card}
+                onPress={() => navigation.navigate('SessionDetail', { sessionId: item.id })}
+              >
+                <View>
+                  <Text style={s.title}>{item.companyId} · {item.role}</Text>
+                  <Text style={s.sub}>{dateStr}</Text>
+                  {item.avgResponseTime && (
+                    <Text style={s.sub}>평균 응답시간 {item.avgResponseTime}초</Text>
+                  )}
+                </View>
+                <Text style={s.score}>{scoreLabel}</Text>
+              </Pressable>
+            );
+          }}
+        />
+      )}
+    </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20 },
-  header: { fontSize: 22, fontWeight: '700', marginBottom: 8 },
-  sub: { fontSize: 16, color: '#666', marginBottom: 16 },
-  card: {
-    padding: 16,
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
-    elevation: 2,
+const s = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: TOKENS.bg },
+  header: {
+    fontSize: 18, fontWeight: '700', color: TOKENS.label,
+    paddingHorizontal: 16, paddingVertical: 12,
   },
-  title: { fontSize: 18, fontWeight: '600' },
-  date: { fontSize: 14, color: '#888', marginTop: 4 },
-  result: { fontSize: 14, marginTop: 6 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  empty: { color: TOKENS.sub, fontSize: 14 },
+  card: {
+    backgroundColor: TOKENS.cardBg,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: TOKENS.border,
+    padding: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  title: { fontSize: 15, fontWeight: '600', color: TOKENS.label },
+  sub: { fontSize: 12, color: TOKENS.sub, marginTop: 4 },
+  score: { fontSize: 18, fontWeight: '700', color: TOKENS.tint },
 });

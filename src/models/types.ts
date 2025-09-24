@@ -45,7 +45,7 @@ export type RootStackParamList = {
   Result: { sessionId: string; index: number } | undefined; // 한 문항 결과
   Summary: { sessionId: string } | undefined; // 세트 요약
   History: undefined;
-  SessionDetail: { sessionId: string } | undefined;
+  SessionDetail: { sessionId: string };
   Settings: undefined;
   Feedback: { sessionId: string } | undefined;
   ProUpsell: undefined;
