@@ -1,26 +1,29 @@
-// src/services/sessions.ts
-import { ensureAuth, db } from '@/services/firebase';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+// services/sessions.ts
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { db, ensureAuth } from "@/services/firebase";
 
 export async function ensureSessionDoc(
   sessionId: string,
-  companyId?: string,
-  role?: string,
-  expectedQuestions = 5
+  companyId: string,
+  role: string,
+  expectedQuestions: number
 ) {
   const u = await ensureAuth();
+  const ref = doc(db, "sessions", sessionId);
+
   await setDoc(
-    doc(db, 'sessions', sessionId),
+    ref,
     {
-      uid: u.uid,
-      companyId: companyId ?? 'generic',
-      role: role ?? 'general',
+      uid: u.uid,  // ✅ 로그인한 계정 UID 넣기
+      companyId,
+      role,
       expectedQuestions,
       startedAt: serverTimestamp(),
-      status: 'recording',
+      overallScore: 0,
+      avgResponseTime: 0,
     },
     { merge: true }
   );
-  console.log('[ensureSessionDoc] ok', sessionId);
-  return u.uid;
+
+  return ref;
 }

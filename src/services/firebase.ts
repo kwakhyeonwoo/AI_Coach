@@ -14,6 +14,9 @@ export const app = initializeApp({
 
 export const storage = getStorage(app);
 
+//임시 UID (변경예정)
+export const TEMP_UID = 'test-uid';
+
 // RN에서 연결 안정화
 export const db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
 

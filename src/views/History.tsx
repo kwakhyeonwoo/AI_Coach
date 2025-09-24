@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, Pressable, FlatList, ActivityIndicator, StyleSheet } from 'react-native';
 import { collection, query, where, orderBy, onSnapshot, getDoc, doc } from 'firebase/firestore';
-import { db, ensureAuth } from '@/services/firebase';
+import { db, ensureAuth, TEMP_UID } from '@/services/firebase';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/models/types';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -18,8 +18,7 @@ export default function History({ navigation }: Props) {
 
     ensureAuth().then((u) => {
       const q = query(
-        collection(db, 'sessions'),
-        where('uid', '==', u.uid),
+        collection(db, "users", TEMP_UID, "sessions"),
         orderBy('startedAt', 'desc')
       );
 

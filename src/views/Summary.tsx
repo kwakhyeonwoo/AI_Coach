@@ -12,6 +12,7 @@ import { db } from '@/services/firebase';
 import { requestBuildSummary } from '@/services/summaries';
 import type { RootStackParamList, SummaryData, QAFeedback, InterviewLevel } from '@/models/types';
 import { TOKENS } from '@/theme/tokens';
+import { syncSummaryToSession } from '@/services/summarySync';
 
 // Android에서 LayoutAnimation을 사용하기 위한 설정
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -127,40 +128,47 @@ const Summary: React.FC<Props> = ({ route, navigation }) => {
     const unsub = onSnapshot(
       doc(db, 'summaries', sessionId),
       (snap) => {
-        // ✅ snap.exists()로 문서 존재 여부 확인
+        // ✅ 데이터 스냅샷 처리
         if (!snap.exists()) {
-            setStatus('pending');
-            // 최초 1회 생성 요청 (이미 Question 화면에서 호출했지만, 직접 들어온 경우를 대비)
-            requestBuildSummary(sessionId).catch(e => {
-                console.error('requestBuildSummary failed on mount:', e);
-                setError('요약 생성 요청에 실패했습니다.');
-                setStatus('error');
-            });
-            return;
+          setStatus('pending');
+          requestBuildSummary(sessionId).catch((err: unknown) => {
+            console.error('requestBuildSummary failed on mount:', err);
+            setError('요약 생성 요청에 실패했습니다.');
+            setStatus('error');
+          });
+          return;
         }
 
         const data = snap.data() as any;
         setStatus(data.status || 'pending');
 
         if (data.status === 'ready') {
-          setSummary({
+          const normalized = {
             ...data,
-            // Firestore Timestamp 객체를 ISO 문자열로 변환
             startedAt: data.startedAt?.toDate?.()?.toISOString() ?? new Date().toISOString(),
             endedAt: data.endedAt?.toDate?.()?.toISOString() ?? new Date().toISOString(),
-          });
+          };
+
+          setSummary(normalized);
+
+          // ✅ sessions에도 반영
+          syncSummaryToSession(sessionId, data).catch((err: unknown) =>
+            console.warn('syncSummaryToSession failed', err)
+          );
         } else if (data.status === 'error') {
           setError(data.error || '알 수 없는 오류로 요약 생성에 실패했습니다.');
         }
       },
-      (e) => {
-        console.error("Firestore watch error:", e);
-        setError("요약 데이터를 불러오는 중 오류가 발생했습니다.");
+      (err) => {
+        console.error('Firestore watch error:', err);
+        setError('요약 데이터를 불러오는 중 오류가 발생했습니다.');
         setStatus('error');
       }
     );
 
-    return () => unsub();
+    return () => {
+      unsub();
+    };
   }, [sessionId]);
   
   // ✅ 렌더링 로직을 더 단순하게 수정
