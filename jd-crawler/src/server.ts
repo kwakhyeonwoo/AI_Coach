@@ -5,6 +5,9 @@ import fetch from "node-fetch";
 const app = express();
 app.use(express.json());
 
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || "";
+const SEARCH_ENGINE_ID = process.env.SEARCH_ENGINE_ID || "";
+
 // ----------------------
 // 메인 엔드포인트
 // ----------------------
@@ -13,44 +16,31 @@ app.post("/scrape", async (req: Request, res: Response) => {
   if (!url) return res.status(400).json({ error: "url required" });
 
   try {
-    let text = "";
+    let companyName = "";
 
+    // 1️⃣ 잡코리아 기업명 추출
     if (url.includes("jobkorea.co.kr")) {
-      text = await scrapeWithPuppeteer(url, [
-        ".detailArea",
-        ".recruitment-content",
-        ".detail-content",
-        "#container",
-        "body",
-      ]);
-    } else if (url.includes("saramin.co.kr")) {
-      text = await scrapeWithPuppeteer(url, [
-        ".wrap_jview",
-        ".user_content",
-        ".content",
-        ".cont",
-        "body",
-      ], 60000);
-    } else if (url.includes("wanted.co.kr")) {
-      text = await scrapeWanted(url);
-    } else if (url.includes("jumpit.co.kr")) {
-      text = await scrapeWithPuppeteer(url, [
-        "main",
-        ".job-description",
-        ".position-detail",
-        "body",
-      ], 60000);
+      companyName = await scrapeCompanyFromJobKorea(url);
     } else {
-      return res.status(400).json({ error: "Unsupported domain" });
+      return res.status(400).json({ error: "Only JobKorea URLs supported (데모용)" });
     }
 
-    if (!text || text.trim().length < 50) {
-      throw new Error("No meaningful content found");
-    }
+    // 2️⃣ Google Search API로 홈페이지 탐색
+    const homepage = await findCompanyHomepage(companyName);
+    if (!homepage) throw new Error("Could not resolve company homepage");
 
-    const keywords = extractKeywords(text);
+    // 3️⃣ 인재상/채용 페이지 찾기
+    const talentPageUrl = await findTalentPage(homepage);
 
-    res.json({ url, text: text.slice(0, 2000), keywords });
+    // 4️⃣ 해당 페이지에서 텍스트 크롤링
+    const talentText = await scrapePageText(talentPageUrl);
+
+    res.json({
+      company: companyName,
+      homepage,
+      talentPageUrl,
+      text: talentText.slice(0, 2000),
+    });
   } catch (err: any) {
     console.error("Scrape error:", err);
     res.status(500).json({ error: err.message });
@@ -58,75 +48,73 @@ app.post("/scrape", async (req: Request, res: Response) => {
 });
 
 // ----------------------
-// Puppeteer 크롤러
+// 잡코리아 기업명 추출
 // ----------------------
-async function scrapeWithPuppeteer(
-  url: string,
-  selectors: string[],
-  timeout = 45000
-): Promise<string> {
+async function scrapeCompanyFromJobKorea(url: string): Promise<string> {
   const browser = await puppeteer.launch({
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
     headless: true,
   });
   const page = await browser.newPage();
-  await page.goto(url, { waitUntil: "domcontentloaded", timeout });
+  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
 
-  let text = "";
-  for (const selector of selectors) {
-    try {
-      await page.waitForSelector(selector, { timeout: 8000 });
-      text = await page.$eval(selector, el => (el as HTMLElement).innerText || "");
-      if (text.trim().length > 0) break;
-    } catch {
-      console.warn(`⚠️ Selector not found: ${selector}`);
-    }
-  }
-
-  // fallback
-  if (!text) {
-    text = await page.evaluate(() => document.body.innerText || "");
-  }
+  // ✅ 셀렉터 수정: ".coName a"
+  const companyName = await page.$eval(".coName a", el => (el as HTMLElement).innerText.trim());
 
   await browser.close();
+  return companyName;
+}
+
+
+// ----------------------
+// Google Search API 사용
+// ----------------------
+async function findCompanyHomepage(company: string): Promise<string | null> {
+  if (!GOOGLE_API_KEY || !SEARCH_ENGINE_ID) {
+    throw new Error("Google Search API not configured");
+  }
+
+  const apiUrl = `https://www.googleapis.com/customsearch/v1?q=${encodeURIComponent(
+    company + " 공식 홈페이지"
+  )}&key=${GOOGLE_API_KEY}&cx=${SEARCH_ENGINE_ID}`;
+
+  const res = await fetch(apiUrl);
+  if (!res.ok) throw new Error("Google Search API failed");
+
+  const data = await res.json();
+
+  // 첫 번째 결과 링크 반환
+  return data.items?.[0]?.link || null;
+}
+
+// ----------------------
+// 인재상/채용 페이지 찾기
+// ----------------------
+async function findTalentPage(homepage: string): Promise<string> {
+  const candidates = ["/careers", "/recruit", "/about", "/인재상"];
+  for (const path of candidates) {
+    try {
+      const res = await fetch(homepage + path);
+      if (res.ok) return homepage + path;
+    } catch {}
+  }
+  return homepage; // fallback
+}
+
+// ----------------------
+// Puppeteer로 텍스트 크롤링
+// ----------------------
+async function scrapePageText(url: string): Promise<string> {
+  const browser = await puppeteer.launch({
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    headless: true,
+  });
+  const page = await browser.newPage();
+  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
+
+  const text = await page.evaluate(() => document.body.innerText || "");
+  await browser.close();
   return text;
-}
-
-// ----------------------
-// Wanted API 크롤링
-// ----------------------
-async function scrapeWanted(url: string): Promise<string> {
-  const jobIdMatch = url.match(/wd\/(\d+)/);
-  if (!jobIdMatch) throw new Error("Invalid Wanted URL");
-  const jobId = jobIdMatch[1];
-
-  const apiUrl = `https://www.wanted.co.kr/api/v4/jobs/${jobId}`;
-  const response = await fetch(apiUrl);
-  if (!response.ok) throw new Error("Failed to fetch Wanted API");
-
-  const data = await response.json();
-  return [
-    data?.position?.title,
-    data?.detail?.requirement,
-    data?.detail?.main_tasks,
-    data?.detail?.benefits,
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
-// ----------------------
-// 간단 키워드 추출기
-// ----------------------
-function extractKeywords(text: string): string[] {
-  return Array.from(
-    new Set(
-      text
-        .split(/\s+/)
-        .map(w => w.trim())
-        .filter(w => w.length > 1)
-    )
-  ).slice(0, 30);
 }
 
 // ----------------------
@@ -134,3 +122,5 @@ const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
+
+

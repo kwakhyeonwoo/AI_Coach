@@ -1,17 +1,19 @@
-// src/navigation/AppNavigator.tsx
 import React from 'react';
+import { Platform } from 'react-native';
+// ❌ import { NavigationContainer } from '@react-navigation/native'; // 이 줄을 삭제합니다.
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 import Home from '../views/Home';
 import Question from '../views/Question';
 import Summary from '../views/Summary';
 import Settings from '../views/Settings';
+import History from '../views/History';
+import SessionDetail from '../views/SessionDetail';
 import type { RootStackParamList } from '../models/types';
-import { Platform } from 'react-native';
-
-function HistoryScreen() { return null; }
+import { TOKENS } from '../theme/tokens';
 
 export type TabParamList = {
   Practice: undefined;
@@ -19,7 +21,7 @@ export type TabParamList = {
   Settings: undefined;
 };
 
-const Tab = createBottomTabNavigator<TabParamList>();
+const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 function PracticeStack() {
@@ -27,59 +29,70 @@ function PracticeStack() {
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: '#fff' },
+        contentStyle: { backgroundColor: TOKENS.bg },
       }}
     >
-      <Stack.Screen name="Home" component={Home} options={{
-        title: '면접',
-        headerLargeTitle: Platform.OS === 'ios',
-        headerShadowVisible: false,
-      }}/>
+      <Stack.Screen name="Home" component={Home} />
       <Stack.Screen name="Question" component={Question} />
-      <Stack.Screen name="Summary" component={Summary} options={{title:'면접 요약'}}/>
+      <Stack.Screen name="Summary" component={Summary} options={{ title: '면접 요약' }} />
     </Stack.Navigator>
   );
 }
 
-export default function AppNavigator() {
+function HistoryStack() {
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerShown: false,
+        contentStyle: { backgroundColor: TOKENS.bg },
+      }}
+    >
+      <Stack.Screen name="History" component={History} />
+      <Stack.Screen name="SessionDetail" component={SessionDetail} />
+    </Stack.Navigator>
+  );
+}
+
+function AppNavigator() {
+  const insets = useSafeAreaInsets();
+
+  // ❌ NavigationContainer를 여기서 삭제하고 Tab.Navigator만 반환합니다.
   return (
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#635BFF',
-        tabBarInactiveTintColor: '#9CA3AF',
-        // ✅ 기본 바텀 탭 (하단 고정)
+        tabBarActiveTintColor: TOKENS.tint,
+        tabBarInactiveTintColor: TOKENS.sub,
         tabBarStyle: {
-          height: 58,
-          borderTopColor: '#E5E7EB',
+          backgroundColor: TOKENS.cardBg,
+          height: 60 + insets.bottom,
+          paddingBottom: insets.bottom,
           borderTopWidth: 1,
-          backgroundColor: '#fff',
+          borderTopColor: TOKENS.border,
         },
-        tabBarLabelStyle: { fontSize: 12, marginBottom: 6 },
-        tabBarItemStyle: { paddingVertical: 4 },
-      }}
-    >
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: 'bold',
+          marginTop: -5,
+        },
+      }}>
       <Tab.Screen
         name="Practice"
         component={PracticeStack}
         options={{
           title: '연습',
-          tabBarIcon: ({ color, focused }) => (
-            <MaterialCommunityIcons
-              name={focused ? 'book-open-variant' : 'book-outline'}
-              size={22}
-              color={color}
-            />
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="microphone-outline" color={color} size={size} />
           ),
         }}
       />
       <Tab.Screen
-        name="History"
-        component={HistoryScreen}
+        name="HistoryTab"
+        component={HistoryStack}
         options={{
           title: '기록',
-          tabBarIcon: ({ color }) => (
-            <MaterialCommunityIcons name="history" size={22} color={color} />
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="history" color={color} size={size} />
           ),
         }}
       />
@@ -88,11 +101,13 @@ export default function AppNavigator() {
         component={Settings}
         options={{
           title: '설정',
-          tabBarIcon: ({ color }) => (
-            <MaterialCommunityIcons name="cog-outline" size={22} color={color} />
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="cog-outline" color={color} size={size} />
           ),
         }}
       />
     </Tab.Navigator>
   );
 }
+
+export default AppNavigator;
