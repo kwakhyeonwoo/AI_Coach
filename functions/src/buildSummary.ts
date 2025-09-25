@@ -1,17 +1,15 @@
 // functions/src/buildSummary.ts
+import * as functions from "firebase-functions/v2";
 import { onRequest } from "firebase-functions/v2/https";
-import { logger } from "firebase-functions";
-import { db } from "./admin";
 import { FieldValue } from "firebase-admin/firestore";
+import { db } from "./admin";
 import OpenAI from "openai";
 
-type QADoc = {
+interface QADoc {
   questionText: string;
   transcript: string;
-  metrics?: {
-    durationSec?: number;
-  };
-};
+  metrics?: { durationSec?: number };
+}
 
 export const buildSummary = onRequest(
   {
@@ -32,23 +30,35 @@ export const buildSummary = onRequest(
       }
 
       const summaryRef = db.doc(`summaries/${sessionId}`);
-      logger.info(`[buildSummary] Starting for session: ${sessionId}`);
-      
-      await summaryRef.set({ status: 'processing', updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      functions.logger.info(`[buildSummary] Starting for session: ${sessionId}`);
 
-      const sessionRef = db.collection("sessions").doc(sessionId);
+      // 🔹 status 먼저 업데이트
+      await summaryRef.set(
+        { status: "processing", updatedAt: FieldValue.serverTimestamp() },
+        { merge: true }
+      );
+
+      // 🔹 summaries/{sessionId}에서 uid 읽기
+      const summarySnap = await summaryRef.get();
+      const uid = summarySnap.data()?.uid;
+      if (!uid) {
+        throw new Error(`uid not found in summaries/${sessionId}`);
+      }
+
+      // 🔹 users/{uid}/sessions/{sessionId} 읽기
+      const sessionRef = db.collection("users").doc(uid).collection("sessions").doc(sessionId);
       const sessionSnap = await sessionRef.get();
       if (!sessionSnap.exists) {
-        throw new Error(`Session not found: ${sessionId}`);
+        throw new Error(`Session not found: users/${uid}/sessions/${sessionId}`);
       }
       const sessionData = sessionSnap.data()!;
 
+      // 🔹 QA 가져오기
       const qaCol = sessionRef.collection("qa");
       const qaSnap = await qaCol.orderBy("createdAt", "asc").get();
-      
-      // ✅ 1. AI에게 전달할 데이터 목록 생성 (id 포함)
+
       const qaListForAI = qaSnap.docs.map((doc) => ({
-        id: doc.id, // "q1", "q2", ...
+        id: doc.id,
         questionText: (doc.data() as QADoc).questionText,
         transcript: (doc.data() as QADoc).transcript,
       }));
@@ -60,60 +70,49 @@ export const buildSummary = onRequest(
       const isProSession = sessionData.isPro === true && sessionData.jdKeywords?.length > 0;
       const jdKeywords = isProSession ? sessionData.jdKeywords : [];
 
-      // ✅ 2. 시스템 프롬프트를 JSON 입/출력에 맞게 수정하고 ID 보존을 명확히 지시
+      // 🔹 시스템 프롬프트
       const systemPrompt = `
-        You are an expert AI interview coach. I will provide interview data in JSON format. Your task is to analyze it and return a single JSON evaluation object.
+        You are an expert AI interview coach. I will provide interview data in JSON format. 
+        Your task is to analyze it and return a single JSON evaluation object.
         
         ${isProSession 
-          ? `// PRO MODE: This is a Pro session. Evaluate based on the provided JD keywords.
-             - Scoring Formula: overall = Σ(score_dim_i × weight_i_jd) + α × keyword_coverage + β × metric_specificity
-             - α (keyword_coverage): For each answer, check if any of these JD keywords are mentioned: [${jdKeywords.join(', ')}].
-             - β (metric_specificity): For each answer, check if it contains specific numbers, KPIs, or metrics.`
-          : `// FREE MODE: This is a Free session. Evaluate based on general best practices.`
-        }
+          ? `// PRO MODE: Evaluate based on JD keywords: [${jdKeywords.join(", ")}]`
+          : `// FREE MODE: General best practices.`}
 
-        The final JSON object MUST have the following structure: 
-        { 
-          "overallScore": number, 
-          "level": "Beginner" | "Intermediate" | "Advanced", 
-          "strengths": string[], 
-          "improvements": string[], 
-          "tips": string[], 
-          "qa": { 
-            "id": string, 
-            "questionText": string, 
-            "answerSummary": string, 
+        JSON format:
+        {
+          "overallScore": number,
+          "level": "Beginner" | "Intermediate" | "Advanced",
+          "strengths": string[],
+          "improvements": string[],
+          "tips": string[],
+          "qa": {
+            "id": string,
+            "questionText": string,
+            "answerSummary": string,
             "modelAnswer": string,
-            "feedback": string, // 👈 Pro 피드백을 담을 필드
-            "score": number, 
-            "tags": string[], 
-            "jdKeywordCoverage": boolean, // 👈 JD 키워드 포함 여부
-            "metricSpecificity": boolean  // 👈 KPI 포함 여부
-          }[] 
-        }.
-        
-        - All text must be in Korean.
-        - The "qa" array MUST contain an object for EVERY question in the input.
-        - Preserve the original "id" and "questionText" for each item.
-        - For Pro sessions, the "feedback" should explicitly mention how well the answer aligns with the JD keywords.
+            "feedback": string,
+            "score": number,
+            "tags": string[],
+            "jdKeywordCoverage": boolean,
+            "metricSpecificity": boolean
+          }[]
+        }
       `;
 
-      // ✅ 3. 사용자 프롬프트에 단순 텍스트 대신 JSON 문자열을 전달
+      // 🔹 사용자 프롬프트
       const userPrompt = `
-        Process the following interview data according to the system instructions.
-        
-        Interview Context:
+        Process the following interview data:
         Role: ${sessionData.role || "general"}
-        Company (optional): ${sessionData.companyId || "N/A"}
-
-        Q&A List (JSON):
+        Company: ${sessionData.companyId || "N/A"}
+        
+        Q&A JSON:
         ${JSON.stringify(qaListForAI, null, 2)}
       `;
-      
-      logger.info(`[buildSummary] Calling OpenAI for session: ${sessionId}`);
+
       const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
       const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini", // 최신 모델 사용 권장
+        model: "gpt-4o-mini",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
@@ -128,39 +127,44 @@ export const buildSummary = onRequest(
       }
       const summaryData = JSON.parse(resultJson);
 
-      // ✅ 4. AI가 생성한 qa 배열의 길이를 확인하여 누락 여부 검증
+      // 🔹 QA 개수 검증
       if (summaryData.qa?.length !== qaListForAI.length) {
-          logger.warn(`[buildSummary] Mismatch in QA length. Expected ${qaListForAI.length}, got ${summaryData.qa?.length}`, { sessionId });
-          // 여기서 에러 처리를 하거나, 누락된 질문을 수동으로 추가하는 로직을 넣을 수도 있습니다.
+        functions.logger.warn(
+          `[buildSummary] QA length mismatch. expected=${qaListForAI.length}, got=${summaryData.qa?.length}`
+        );
       }
-      
+
+      // 🔹 최종 저장할 데이터
       const finalPayload = {
         ...summaryData,
-        uid: sessionData.uid,
+        uid,
         sessionId,
         startedAt: sessionData.startedAt,
         endedAt: sessionData.endedAt ?? FieldValue.serverTimestamp(),
         totalQuestions: qaListForAI.length,
-        totalSpeakingSec: qaSnap.docs.reduce((sum, doc) => sum + ((doc.data() as QADoc).metrics?.durationSec || 0), 0),
+        totalSpeakingSec: qaSnap.docs.reduce(
+          (sum, doc) => sum + ((doc.data() as QADoc).metrics?.durationSec || 0),
+          0
+        ),
         status: "ready",
         updatedAt: FieldValue.serverTimestamp(),
       };
 
       await summaryRef.set(finalPayload, { merge: true });
 
-      logger.info(`[buildSummary] Successfully generated summary for session: ${sessionId}`);
+      functions.logger.info(`[buildSummary] Successfully generated summary for session: ${sessionId}`);
       res.status(200).json({ success: true, sessionId });
-
     } catch (e: any) {
-      logger.error("[buildSummary] Fatal error", {
+      functions.logger.error("[buildSummary] Fatal error", {
         message: e?.message,
         stack: e?.stack,
         sessionId: req.query?.sessionId ?? req.body?.sessionId,
       });
+
       const sessionId = req.query?.sessionId ?? req.body?.sessionId;
       if (sessionId) {
         const ref = db.doc(`summaries/${sessionId}`);
-        await ref.set({ status: 'error', error: e?.message ?? 'Unknown error' }, { merge: true });
+        await ref.set({ status: "error", error: e?.message ?? "Unknown error" }, { merge: true });
       }
       res.status(500).json({ error: e?.message ?? "Failed to build summary" });
     }

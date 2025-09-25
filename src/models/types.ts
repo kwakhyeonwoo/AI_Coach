@@ -1,3 +1,5 @@
+import { Timestamp, FieldValue } from "firebase/firestore";
+
 export type Language = 'ko' | 'en';
 export type Difficulty = 'beginner' | 'intermediate' | 'advanced';
 export type Mode = 'free' | 'pro';
@@ -64,10 +66,16 @@ export interface InterviewSettings {
 export interface InterviewSession {
   id: string;
   uid?: string | null;
-  settings: InterviewSettings;
+  companyId: string;
+  role: string;
   status: 'active' | 'completed' | 'aborted';
-  createdAt: number; // Date.now()
-  updatedAt: number; // Date.now()
+  settings: InterviewSettings;
+  startedAt: Date | Timestamp;
+  createdAt: Date | Timestamp | FieldValue;
+  updatedAt: Date | Timestamp | FieldValue;
+  avgResponseTime?: number;
+  overallScore?: number | null;
+  expectedQuestions?: number;
 }
 
 export interface QA { q: string; a: string }

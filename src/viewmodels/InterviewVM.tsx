@@ -1,5 +1,11 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
-import type { InterviewSettings, Mode } from '../models/types';
+import type { InterviewSession, InterviewSettings, Mode, QA } from '../models/types';
+// ⭐️ 1. 경로 별칭(@/)을 상대 경로(../)로 수정합니다.
+import { createSession, updateSessionQa } from '../services/sessionStore';
+import { serverTimestamp } from 'firebase/firestore';
+import { auth } from '@/services/firebase';
+
+const TEMP_UID = 'test-user-001';
 
 interface VMState {
   loading: boolean;
@@ -7,7 +13,8 @@ interface VMState {
   settings: InterviewSettings;
   setSettings: (s: Partial<InterviewSettings>) => void;
   setMode: (m: Mode) => void;
-  startNewSession: () => Promise<string>; // sessionId 반환
+  startNewSession: () => Promise<string>;
+  saveQa: (qa: QA) => Promise<void>;
 }
 
 const DEFAULT_SETTINGS: InterviewSettings = {
@@ -35,16 +42,43 @@ export const InterviewProvider: React.FC<React.PropsWithChildren> = ({ children 
   const startNewSession = async (): Promise<string> => {
     setLoading(true);
     try {
-      const id = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      setCurrentSessionId(id);
-      return id;
+      const partialSession: Partial<InterviewSession> = {
+        uid: auth.currentUser?.uid,
+        companyId: settings.company || "generic",
+        role: settings.role || "general",
+        status: "active",
+        settings,
+        startedAt: new Date(),         // 로컬 Date 저장 (혹은 serverTimestamp())
+        createdAt: serverTimestamp(),  // Firestore 서버 시간
+        updatedAt: serverTimestamp(),  // Firestore 서버 시간
+      };
+
+      const newSessionId = await createSession(TEMP_UID, partialSession);
+      setCurrentSessionId(newSessionId);
+      return newSessionId;
+    } catch (error) {
+        console.error("Failed to start new session in Firestore:", error);
+        throw error;
     } finally {
       setLoading(false);
     }
   };
 
+  const saveQa = async (qa: QA) => {
+    if (!currentSessionId) {
+        console.error("Cannot save QA without a current session ID.");
+        return;
+    }
+    try {
+        await updateSessionQa(TEMP_UID, currentSessionId, qa);
+    } catch (error) {
+        console.error("Failed to save QA to Firestore:", error);
+        throw error;
+    }
+  };
+
   const value = useMemo<VMState>(
-    () => ({ loading, currentSessionId, settings, setSettings, setMode, startNewSession }),
+    () => ({ loading, currentSessionId, settings, setSettings, setMode, startNewSession, saveQa }),
     [loading, currentSessionId, settings]
   );
 

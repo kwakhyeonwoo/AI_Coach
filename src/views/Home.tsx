@@ -7,8 +7,12 @@ import { useInterviewVM } from '../viewmodels/InterviewVM';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS } from '@/theme/tokens';
 import { resolveAndExtractJD } from "@/utils/jd";
-import { ensureSessionDoc } from '@/services/sessions';
 import { useNavigation } from '@react-navigation/native';
+import { createSession } from '@/services/sessionStore';
+import { getAuth } from 'firebase/auth';
+
+const auth = getAuth();
+const uid = auth.currentUser?.uid;
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
@@ -66,20 +70,34 @@ const Home: React.FC<Props> = ({ navigation }) => {
     }
   };  
 
-  const start = async() => {
+  const start = async () => {
     try {
-        const id = sessionIdRef.current;
         const companyId = (settings.company || 'generic').trim() || 'generic';
         const role = (settings.role as string) || 'general';
-        const expectedQuestions = 5; // 필요하면 설정값으로 치환
+        const expectedQuestions = 5; // 필요시 설정값으로 교체
 
-        await ensureSessionDoc(id, companyId, role, expectedQuestions);
-        
-        navigation.navigate('Question', { sessionId: id});
-    } catch (e){
+        if(!uid) {
+            throw new Error("로그인된 사용자가 아닙니다.");
+        }
+        // ✅ 새 세션 생성
+        const sessionId = await createSession(uid, {
+        companyId,
+        role,
+        status: 'active',
+        expectedQuestions,
+        startedAt: new Date(),
+        updatedAt: new Date(),
+        });
+
+        console.log('✅ Created session:', sessionId);
+
+        // ✅ Question 화면으로 이동 (sessionId 전달)
+        navigation.navigate('Question', { sessionId });
+    } catch (e) {
         console.warn('[Home.start] failed to start session', e);
     }
   };
+
 
   const insets = useSafeAreaInsets();
 

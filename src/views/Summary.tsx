@@ -14,18 +14,19 @@ import type { RootStackParamList, SummaryData, QAFeedback, InterviewLevel } from
 import { TOKENS } from '@/theme/tokens';
 import { syncSummaryToSession } from '@/services/summarySync';
 
+// ✅ 임시 UID (로그인 붙이기 전까지만 사용)
+const TEMP_UID = 'test-user-001';
+
 // Android에서 LayoutAnimation을 사용하기 위한 설정
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-// --- 네비게이션 타입 ---
 type Props = {
-  navigation: any; // 실제 프로젝트에 맞는 타입으로 교체 권장
+  navigation: any;
   route: { params?: { sessionId: string } };
 };
 
-// --- 도우미 함수 ---
 const clamp = (n: number, min = 0, max = 100) => Math.min(max, Math.max(min, n));
 const getLevelDescription = (level: InterviewLevel, score: number) => {
   if (score > 85) return '훌륭해요! 핵심을 찌르는 답변이에요.';
@@ -34,7 +35,6 @@ const getLevelDescription = (level: InterviewLevel, score: number) => {
   return '개념 이해는 충분해요. 실제 경험을 더 녹여내 보세요.';
 };
 
-// --- UI 서브 컴포넌트 ---
 const OverallScoreCard: React.FC<{ summary: SummaryData }> = ({ summary }) => {
   const progress = useRef(new Animated.Value(0)).current;
   const scoreColor = summary.overallScore >= 80 ? TOKENS.good : summary.overallScore >= 60 ? TOKENS.warn : TOKENS.bad;
@@ -111,8 +111,7 @@ const QACard: React.FC<{ qaItem: QAFeedback, index: number }> = ({ qaItem, index
   );
 };
 
-// --- 메인 컴포넌트 ---
-const Summary: React.FC<Props> = ({ route, navigation }) => {
+const Summary: React.FC<Props> = ({ route }) => {
   const sessionId = route?.params?.sessionId;
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [status, setStatus] = useState<'loading' | 'pending' | 'ready' | 'error'>('loading');
@@ -125,10 +124,10 @@ const Summary: React.FC<Props> = ({ route, navigation }) => {
       return;
     }
 
+    // ✅ 경로를 summaries → users/{uid}/sessions/{sessionId} 로 수정
     const unsub = onSnapshot(
-      doc(db, 'summaries', sessionId),
+      doc(db, 'users', TEMP_UID, 'sessions', sessionId),
       (snap) => {
-        // ✅ 데이터 스냅샷 처리
         if (!snap.exists()) {
           setStatus('pending');
           requestBuildSummary(sessionId).catch((err: unknown) => {
@@ -170,42 +169,37 @@ const Summary: React.FC<Props> = ({ route, navigation }) => {
       unsub();
     };
   }, [sessionId]);
-  
-  // ✅ 렌더링 로직을 더 단순하게 수정
-  const renderContent = () => {
-      // 1. 에러가 발생했다면 에러 메시지 표시
-      if (error) {
-          return (
-              <View style={styles.center}>
-                  <MaterialCommunityIcons name="alert-circle-outline" size={48} color={TOKENS.bad} />
-                  <Text style={styles.message}>오류 발생</Text>
-                  <Text style={styles.sub}>{error}</Text>
-              </View>
-          );
-      }
-      
-      // 2. summary 데이터가 아직 없으면 로딩 메시지 표시
-      //    (status가 loading, pending, 또는 ready여도 데이터가 없으면 이 부분을 통과)
-      if (!summary) {
-          return (
-              <View style={styles.center}>
-                  <ActivityIndicator />
-                  <Text style={styles.message}>요약을 생성 중입니다. 잠시만 기다려주세요.</Text>
-              </View>
-          );
-      }
 
-      // 3. summary 데이터가 완전히 준비되면 요약본 표시
+  const renderContent = () => {
+    if (error) {
       return (
-        <ScrollView contentContainerStyle={styles.scroll}>
-          <OverallScoreCard summary={summary} />
-          <AnalysisCard strengths={summary.strengths} improvements={summary.improvements} />
-          {summary.qa.map((item, index) => (
-            <QACard key={item.id} qaItem={item} index={index} />
-          ))}
-          <View style={{ height: 40 }} />
-        </ScrollView>
+        <View style={styles.center}>
+          <MaterialCommunityIcons name="alert-circle-outline" size={48} color={TOKENS.bad} />
+          <Text style={styles.message}>오류 발생</Text>
+          <Text style={styles.sub}>{error}</Text>
+        </View>
       );
+    }
+
+    if (!summary) {
+      return (
+        <View style={styles.center}>
+          <ActivityIndicator />
+          <Text style={styles.message}>요약을 생성 중입니다. 잠시만 기다려주세요.</Text>
+        </View>
+      );
+    }
+
+    return (
+      <ScrollView contentContainerStyle={styles.scroll}>
+        <OverallScoreCard summary={summary} />
+        <AnalysisCard strengths={summary.strengths} improvements={summary.improvements} />
+        {summary.qa.map((item, index) => (
+          <QACard key={item.id} qaItem={item} index={index} />
+        ))}
+        <View style={{ height: 40 }} />
+      </ScrollView>
+    );
   };
 
   return (
@@ -215,17 +209,16 @@ const Summary: React.FC<Props> = ({ route, navigation }) => {
   );
 };
 
-// ... (스타일과 다른 컴포넌트들은 그대로 유지)
 const Chip: React.FC<{ label: string; icon?: keyof typeof MaterialCommunityIcons.glyphMap; color?: string }> = ({ label, icon, color = TOKENS.sub }) => (
-    <View style={[styles.chip, { backgroundColor: `${color}1A` }]}>
-      {icon && <MaterialCommunityIcons name={icon} size={16} color={color} />}
-      <Text style={[styles.chipText, { color }]}>{label}</Text>
-    </View>
+  <View style={[styles.chip, { backgroundColor: `${color}1A` }]}>
+    {icon && <MaterialCommunityIcons name={icon} size={16} color={color} />}
+    <Text style={[styles.chipText, { color }]}>{label}</Text>
+  </View>
 );
 const ChipList: React.FC<{ items: string[]; icon?: keyof typeof MaterialCommunityIcons.glyphMap; color?: string }> = ({ items, icon, color }) => (
-    <View style={styles.tagRow}>
-      {items.map((txt, i) => <Chip key={`${txt}-${i}`} label={txt} icon={icon} color={color} />)}
-    </View>
+  <View style={styles.tagRow}>
+    {items.map((txt, i) => <Chip key={`${txt}-${i}`} label={txt} icon={icon} color={color} />)}
+  </View>
 );
 
 const styles = StyleSheet.create({
@@ -258,5 +251,5 @@ const styles = StyleSheet.create({
   subTitle: { fontWeight: '600', color: TOKENS.label, marginTop: 8, marginBottom: 4 },
   followUp: { fontSize: 13, color: TOKENS.sub, lineHeight: 20, marginLeft: 4 },
 });
-  
+
 export default Summary;

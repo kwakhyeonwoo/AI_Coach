@@ -1,18 +1,32 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, Pressable, FlatList, ActivityIndicator, StyleSheet } from 'react-native';
-import { collection, query, where, orderBy, onSnapshot, getDoc, doc } from 'firebase/firestore';
-import { db, ensureAuth, TEMP_UID } from '@/services/firebase';
+import { collection, query, where, orderBy, onSnapshot, getDoc, doc, Timestamp } from 'firebase/firestore';
+import { db, ensureAuth } from '@/services/firebase';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { RootStackParamList } from '@/models/types';
+import type { InterviewSettings, RootStackParamList } from '@/models/types';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { TOKENS } from '@/theme/tokens';
+import type { InterviewSession } from '@/models/types';
+
+
+const TEMP_UID = 'test-user-001';
+import { listenForSessions } from '../services/sessions';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'History'>;
 
 export default function History({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
-  const [sessions, setSessions] = useState<any[]>([]);
+  const [sessions, setSessions] = useState<InterviewSession[]>([]);
 
+  useEffect(() => {
+    // ✅ listenForSessions 호출 시 TEMP_UID를 전달합니다.
+    const unsubscribe = listenForSessions(TEMP_UID, (newSessions) => {
+      setSessions(newSessions);
+    });
+
+    return () => unsubscribe();
+  }, []);
+  
   useEffect(() => {
     let unsub: (() => void) | null = null;
 
@@ -23,8 +37,8 @@ export default function History({ navigation }: Props) {
       );
 
       unsub = onSnapshot(q, async (snap) => {
-        const items = await Promise.all(
-          snap.docs.map(async (d) => {
+        const items: InterviewSession[] = await Promise.all(
+            snap.docs.map(async (d) => {
             const data = d.data();
             const sessionId = d.id;
 
@@ -34,18 +48,27 @@ export default function History({ navigation }: Props) {
             const summaryData = summarySnap.exists() ? summarySnap.data() : null;
 
             return {
-              id: sessionId,
-              ...data,
-              overallScore: summaryData?.overallScore ?? null,
-              avgResponseTime: summaryData?.avgResponseTime ?? null,
-              mode: data.mode ?? 'free',
+                id: sessionId,
+                companyId: data.companyId ?? "unknown",
+                role: data.role ?? "unknown",
+                startedAt: data.startedAt?.toDate?.() ?? new Date(),
+                status: (data.status as 'active' | 'completed' | 'aborted') ?? 'active',
+                settings: data.settings ?? {} as InterviewSettings,
+
+                overallScore: summaryData?.overallScore ?? null,
+                avgResponseTime: summaryData?.avgResponseTime ?? null,
+
+                createdAt: data.createdAt ?? Date.now(),
+                updatedAt: data.updatedAt ?? Date.now(),
+                uid: data.uid ?? null,
             };
-          })
+            })
         );
 
         setSessions(items);
         setLoading(false);
-      });
+        });
+
     });
 
     return () => {
@@ -68,7 +91,10 @@ export default function History({ navigation }: Props) {
           contentContainerStyle={{ padding: 16, gap: 12 }}
           renderItem={({ item }) => {
             const scoreLabel = item.overallScore != null ? `${item.overallScore}점` : '-점';
-            const dateStr = item.startedAt?.toDate?.().toLocaleString?.() ?? '시작 시간 없음';
+            const dateStr =
+                item.startedAt instanceof Timestamp
+                    ? item.startedAt.toDate().toLocaleString()
+                    : (item.startedAt as Date).toLocaleString?.() ?? "시작 시간 없음";
 
             return (
               <Pressable

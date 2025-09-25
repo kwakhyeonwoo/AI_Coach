@@ -15,10 +15,14 @@ import { TOKENS } from '@/theme/tokens';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { requestBuildSummary } from '@/services/summaries';
 import { uploadQuestionAudio } from '@/services/uploadAudio';
-import { db, ensureAuth, TEMP_UID } from '@/services/firebase';
+import { db, ensureAuth } from '@/services/firebase';
 import { createSession } from '@/services/sessionStore';
+import { getAuth } from 'firebase/auth';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Question'>;
+
+const auth = getAuth();
+const uid = auth.currentUser?.uid;
 
 const SmallBtn: React.FC<{ label: string; onPress?: () => void; disabled?: boolean }> = ({ label, onPress, disabled }) => (
   <Pressable
@@ -46,7 +50,20 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
   useEffect(() => {
     const initSession = async () => {
       if (!sessionId) {
-        const id = await createSession(settings.company || 'generic', settings.role || 'general');
+        if(!uid) {
+            throw new Error("로그인된 사용자가 아닙니다.");
+        }
+        
+        const id = await createSession(uid, {
+          companyId: settings.company || "generic",
+          role: settings.role || "general",
+          status: "active",
+          settings,
+          startedAt: new Date(),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+
         console.log("created session:", id);
         setSessionId(id);
       }
@@ -89,7 +106,7 @@ const Question: React.FC<Props> = ({ route, navigation }) => {
     const questionId = `q${vm.index}`;
 
     // ✅ users/{uid}/sessions/{sessionId}/qa/{questionId}
-    const qaRef = doc(db, 'users', TEMP_UID, 'sessions', sessionId, 'qa', questionId);
+    const qaRef = doc(db, 'users', u.uid, 'sessions', sessionId, 'qa', questionId);
 
     if (audioUri) {
       await uploadQuestionAudio({

@@ -1,29 +1,20 @@
-// services/sessions.ts
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
-import { db, ensureAuth } from "@/services/firebase";
+import { db } from './firebase';
+import { collection, query, onSnapshot, orderBy } from 'firebase/firestore';
+import type { InterviewSession } from '../models/types';
 
-export async function ensureSessionDoc(
-  sessionId: string,
-  companyId: string,
-  role: string,
-  expectedQuestions: number
-) {
-  const u = await ensureAuth();
-  const ref = doc(db, "sessions", sessionId);
+// ✅ 1. listenForSessions 함수가 uid를 인자로 받도록 수정합니다.
+export function listenForSessions(uid: string, callback: (sessions: InterviewSession[]) => void) {
+  
+  // ✅ 2. 'sessions' 대신 'users/{uid}/sessions' 경로를 사용합니다.
+  const q = query(collection(db, 'users', uid, 'sessions'), orderBy('createdAt', 'desc'));
 
-  await setDoc(
-    ref,
-    {
-      uid: u.uid,  // ✅ 로그인한 계정 UID 넣기
-      companyId,
-      role,
-      expectedQuestions,
-      startedAt: serverTimestamp(),
-      overallScore: 0,
-      avgResponseTime: 0,
-    },
-    { merge: true }
-  );
+  const unsubscribe = onSnapshot(q, (querySnapshot) => {
+    const sessions: InterviewSession[] = [];
+    querySnapshot.forEach((doc) => {
+      sessions.push({ id: doc.id, ...doc.data() } as InterviewSession);
+    });
+    callback(sessions);
+  });
 
-  return ref;
+  return unsubscribe;
 }

@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Platform } from 'react-native';
-// ❌ import { NavigationContainer } from '@react-navigation/native'; // 이 줄을 삭제합니다.
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { onAuthStateChanged, User } from 'firebase/auth';
 
 import Home from '../views/Home';
 import Question from '../views/Question';
@@ -12,8 +12,10 @@ import Summary from '../views/Summary';
 import Settings from '../views/Settings';
 import History from '../views/History';
 import SessionDetail from '../views/SessionDetail';
+import LoginScreen from '../screens/LoginScreen';
 import type { RootStackParamList } from '../models/types';
 import { TOKENS } from '../theme/tokens';
+import { auth } from '../services/firebase';
 
 export type TabParamList = {
   Practice: undefined;
@@ -53,10 +55,26 @@ function HistoryStack() {
   );
 }
 
-function AppNavigator() {
+export default function AppNavigator() {
   const insets = useSafeAreaInsets();
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // ❌ NavigationContainer를 여기서 삭제하고 Tab.Navigator만 반환합니다.
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setLoading(false);
+    });
+    return () => unsub();
+  }, []);
+
+  if (loading) return null; // 로딩 중엔 스플래시 대체 가능
+
+  if (!user) {
+    // 로그인 안 된 상태 → LoginScreen
+    return <LoginScreen navigation={undefined} />;
+  }
+
   return (
     <Tab.Navigator
       screenOptions={{
@@ -70,12 +88,9 @@ function AppNavigator() {
           borderTopWidth: 1,
           borderTopColor: TOKENS.border,
         },
-        tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: 'bold',
-          marginTop: -5,
-        },
-      }}>
+        tabBarLabelStyle: { fontSize: 12, fontWeight: 'bold', marginTop: -5 },
+      }}
+    >
       <Tab.Screen
         name="Practice"
         component={PracticeStack}
@@ -110,4 +125,3 @@ function AppNavigator() {
   );
 }
 
-export default AppNavigator;
