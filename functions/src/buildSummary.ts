@@ -138,7 +138,17 @@ export const buildSummary = onRequest(
       };
 
       // ✅ summaries 컬렉션 대신 users/{uid}/sessions/{sessionId}에 저장
-      await sessionRef.set({ summary: finalPayload, ...finalPayload }, { merge: true });
+      await sessionRef.set(
+      {
+        ...finalPayload,                       // qa, strengths, improvements를 최상위로 넣음
+        summary: finalPayload,                 // 원본은 summary 필드에도 보관
+        overallScore: finalPayload.overallScore ?? 0,
+        status: "ready",
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+      );
+
 
       functions.logger.info(`[buildSummary] Successfully generated summary for session: ${sessionId}`);
       res.status(200).json({ success: true, sessionId });

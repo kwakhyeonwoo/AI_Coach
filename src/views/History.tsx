@@ -55,7 +55,7 @@ export default function History({ navigation }: Props) {
                 status: (data.status as 'active' | 'completed' | 'aborted') ?? 'active',
                 settings: data.settings ?? {} as InterviewSettings,
 
-                overallScore: summaryData?.overallScore ?? null,
+                overallScore: data.overallScore ?? null,
                 avgResponseTime: summaryData?.avgResponseTime ?? null,
 
                 createdAt: data.createdAt ?? Date.now(),
