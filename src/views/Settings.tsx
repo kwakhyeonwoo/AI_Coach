@@ -1,8 +1,13 @@
 // src/views/Setting.tsx
 import React, { useState } from "react";
-import { View, Text, ScrollView, StyleSheet, Pressable, Switch } from "react-native";
+import { View, Text, ScrollView, StyleSheet, Pressable, Switch, Platform, ActionSheetIOS } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { TOKENS } from "@/theme/tokens";
+
+let Picker: any;
+if (Platform.OS === "android") {
+  Picker = require("@react-native-picker/picker").Picker;
+}
 
 export default function Setting() {
   const [hintEnabled, setHintEnabled] = useState(true);
@@ -10,99 +15,166 @@ export default function Setting() {
   const [textData, setTextData] = useState(true);
   const [dailyReminder, setDailyReminder] = useState(true);
   const [weaknessReminder, setWeaknessReminder] = useState(false);
-
+  const [answerTime, setAnswerTime] = useState(90);
+  const [followUp, setFollowUp] = useState(2);
+  
   return (
     <SafeAreaView style={s.safe}>
-      <ScrollView contentContainerStyle={s.scroll}>
+        <ScrollView contentContainerStyle={s.scroll}>
         {/* 구독 상태 */}
         <View style={s.section}>
-          <Text style={s.sectionTitle}>구독 상태</Text>
-          <View style={s.card}>
+            <Text style={s.sectionTitle}>구독 상태</Text>
+            <View style={s.card}>
             <View>
-              <Text style={s.title}>Free 플랜</Text>
-              <Text style={s.sub}>기본 기능 이용 가능</Text>
+                <Text style={s.title}>Free 플랜</Text>
+                <Text style={s.sub}>기본 기능 이용 가능</Text>
             </View>
             <Pressable style={s.button}>
-              <Text style={s.buttonText}>Pro 업그레이드</Text>
+                <Text style={s.buttonText}>Pro 업그레이드</Text>
             </Pressable>
-          </View>
+            </View>
         </View>
 
         {/* 연습 설정 */}
         <View style={s.section}>
-          <Text style={s.sectionTitle}>연습 설정</Text>
-          <View style={s.card}>
-            <Row label="답변 시간" value="90초" />
-            <Row label="팔로업 최대 횟수" value="2회 (Pro 전용)" />
+            <Text style={s.sectionTitle}>연습 설정</Text>
+            <View style={s.card}>
+            {/* ✅ 답변 시간 (iOS/Android 별도) */}
+            {Platform.OS === "ios" ? (
+                <Pressable
+                style={s.row}
+                onPress={() =>
+                    ActionSheetIOS.showActionSheetWithOptions(
+                    {
+                        options: ["취소", "60초", "90초", "120초"],
+                        cancelButtonIndex: 0,
+                    },
+                    (buttonIndex) => {
+                        if (buttonIndex === 1) setAnswerTime(60);
+                        if (buttonIndex === 2) setAnswerTime(90);
+                        if (buttonIndex === 3) setAnswerTime(120);
+                    }
+                    )
+                }
+                >
+                <Text style={s.label}>답변 시간</Text>
+                <Text style={s.value}>{answerTime}초</Text>
+                </Pressable>
+            ) : (
+                <View style={s.row}>
+                    <Text style={s.label}>답변 시간</Text>
+                    <Picker
+                        selectedValue={answerTime}
+                        style={{ width: 120 }}
+                        onValueChange={(val: React.SetStateAction<number>) => setAnswerTime(val)}
+                    >
+                        <Picker.Item label="60초" value={60} />
+                        <Picker.Item label="90초" value={90} />
+                        <Picker.Item label="120초" value={120} />
+                    </Picker>
+                </View>
+            )}
+
+            {/* ✅ 팔로업 최대 횟수 (iOS/Android 별도) */}
+            {Platform.OS === "ios" ? (
+                <Pressable
+                style={s.row}
+                onPress={() =>
+                    ActionSheetIOS.showActionSheetWithOptions(
+                    {
+                        options: ["취소", "1회 (Pro)", "2회 (Pro)", "3회 (Pro)"],
+                        cancelButtonIndex: 0,
+                    },
+                    (buttonIndex) => {
+                        if (buttonIndex === 1) setFollowUp(1);
+                        if (buttonIndex === 2) setFollowUp(2);
+                        if (buttonIndex === 3) setFollowUp(3);
+                    }
+                    )
+                }
+                >
+                <Text style={s.label}>팔로업 최대 횟수</Text>
+                <Text style={s.value}>{followUp}회 (Pro 전용)</Text>
+                </Pressable>
+            ) : (
+                <View style={s.row}>
+                    <Text style={s.label}>팔로업 최대 횟수</Text>
+                    <Picker
+                        selectedValue={followUp}
+                        style={{ width: 120 }}
+                        onValueChange={(val: React.SetStateAction<number>) => setFollowUp(val)}
+                    >
+                        <Picker.Item label="1회 (Pro)" value={1} />
+                        <Picker.Item label="2회 (Pro)" value={2} />
+                        <Picker.Item label="3회 (Pro)" value={3} />
+                    </Picker>
+                </View>
+            )}
+
+            {/* 실시간 힌트 */}
             <ToggleRow
-              label="실시간 힌트"
-              sub="답변 중 도움말 표시"
-              value={hintEnabled}
-              onValueChange={setHintEnabled}
+                label="실시간 힌트"
+                sub="답변 중 도움말 표시"
+                value={hintEnabled}
+                onValueChange={setHintEnabled}
             />
-          </View>
+            </View>
         </View>
 
         {/* 개인정보 설정 */}
         <View style={s.section}>
-          <Text style={s.sectionTitle}>개인정보 설정</Text>
-          <View style={s.card}>
+            <Text style={s.sectionTitle}>개인정보 설정</Text>
+            <View style={s.card}>
             <ToggleRow
-              label="음성 데이터 저장"
-              sub="30일 후 자동 삭제"
-              value={voiceData}
-              onValueChange={setVoiceData}
+                label="음성 데이터 저장"
+                sub="30일 후 자동 삭제"
+                value={voiceData}
+                onValueChange={setVoiceData}
             />
             <ToggleRow
-              label="텍스트 데이터 저장"
-              sub="분석 개선을 위한 데이터 활용"
-              value={textData}
-              onValueChange={setTextData}
+                label="텍스트 데이터 저장"
+                sub="분석 개선을 위한 데이터 활용"
+                value={textData}
+                onValueChange={setTextData}
             />
-          </View>
+            </View>
         </View>
 
         {/* 알림 설정 */}
         <View style={s.section}>
-          <Text style={s.sectionTitle}>알림 설정</Text>
-          <View style={s.card}>
+            <Text style={s.sectionTitle}>알림 설정</Text>
+            <View style={s.card}>
             <ToggleRow
-              label="데일리 연습 알림"
-              sub="매일 오후 7시"
-              value={dailyReminder}
-              onValueChange={setDailyReminder}
+                label="데일리 연습 알림"
+                sub="매일 오후 7시"
+                value={dailyReminder}
+                onValueChange={setDailyReminder}
             />
             <ToggleRow
-              label="약점 보완 알림"
-              sub="주 2회 맞춤 추천"
-              value={weaknessReminder}
-              onValueChange={setWeaknessReminder}
+                label="약점 보완 알림"
+                sub="주 2회 맞춤 추천"
+                value={weaknessReminder}
+                onValueChange={setWeaknessReminder}
             />
-          </View>
+            </View>
         </View>
 
         {/* 약관 및 정책 */}
         <View style={s.section}>
-          <Text style={s.sectionTitle}>약관 및 정책</Text>
-          <View style={s.card}>
+            <Text style={s.sectionTitle}>약관 및 정책</Text>
+            <View style={s.card}>
             <LinkRow label="이용약관" />
             <LinkRow label="개인정보처리방침" />
             <LinkRow label="면책사항" />
             <LinkRow label="환불 및 결제 정책" />
             <LinkRow label="고객지원" />
-          </View>
+            </View>
         </View>
-      </ScrollView>
+        </ScrollView>
     </SafeAreaView>
-  );
-}
+    );
 
-const Row = ({ label, value }: { label: string; value: string }) => (
-  <View style={s.row}>
-    <Text style={s.label}>{label}</Text>
-    <Text style={s.value}>{value}</Text>
-  </View>
-);
+}
 
 const ToggleRow = ({
   label,
