@@ -5,7 +5,7 @@ import type { InterviewSession, QA } from '../models/types';
 const TEMP_UID = 'test-user-001';
 
 // ✅ 세션 생성 (users/{uid}/sessions)
-export async function createSession(uid: string, partialSession: Partial<InterviewSession>): Promise<string> {
+export async function createSession(uid: string = TEMP_UID, partialSession: Partial<InterviewSession>): Promise<string> {
   try {
     const docRef = await addDoc(collection(db, 'users', uid, 'sessions'), {
       uid,
