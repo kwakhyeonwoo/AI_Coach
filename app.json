@@ -1,8 +1,5 @@
 {
   "expo": {
-    "plugin": [
-      "expo-av"
-    ],
     "name": "ai-interview-coach",
     "slug": "ai-interview-coach",
     "version": "1.0.0",
@@ -15,6 +12,7 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
+    "scheme": "aiinterviewcoach",
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
@@ -40,6 +38,7 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "expo-av",
       "expo-audio"
     ],
     "extra": {
@@ -49,3 +48,4 @@
     }
   }
 }
+

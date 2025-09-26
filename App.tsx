@@ -8,7 +8,7 @@ import AppNavigator from './src/navigation/AppNavigator';
 // 참고: 이전 버전에서는 InterviewVMProvider, SessionProvider를 사용했습니다.
 // 현재 코드에 맞게 InterviewProvider로 유지합니다.
 import { InterviewProvider } from './src/viewmodels/InterviewVM';
-import { GoogleAuthProvider } from './src/viewmodels/GoogleAuthVM';
+import { GoogleAuthProvider } from 'firebase/auth/web-extension';
 
 
 export default function App() {
@@ -16,12 +16,11 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <InterviewProvider>
-          <GoogleAuthProvider> {/* ✅ 여기서 Context로 로그인 관리 */}
-            <NavigationContainer>
-              <AppNavigator />
-              <StatusBar style="auto" />
-            </NavigationContainer>
-          </GoogleAuthProvider>
+          {/* ✅ 최상위에 NavigationContainer가 앱 전체를 감쌉니다. */}
+          <NavigationContainer>
+            <AppNavigator />
+            <StatusBar style="auto" />
+          </NavigationContainer>
         </InterviewProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

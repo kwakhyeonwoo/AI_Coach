@@ -100,7 +100,7 @@ export const onInterviewAudioFinalized = onObjectFinalized(
     }
 
     // ---- QA 문서 업데이트 ----
-    const qaRef = db.doc(`sessions/${sessionId}/qa/${questionId}`);
+    const qaRef = db.doc(`users/${uid}/sessions/${sessionId}/qa/${questionId}`);
     await qaRef.set({
       transcript,
       metrics: { wpm, durationSec, fillerCount, fillerRatePerMin, avgPauseSec: null, sentiment: 'neutral' },
@@ -112,7 +112,7 @@ export const onInterviewAudioFinalized = onObjectFinalized(
     const sessionRef = db.doc(`sessions/${sessionId}`);
     const sessionSnap = await sessionRef.get();
     const expected = sessionSnap.get('expectedQuestions') ?? 3;
-    const qaSnap = await db.collection(`sessions/${sessionId}/qa`).get();
+    const qaSnap = await db.collection(`users/${uid}/sessions/${sessionId}/qa`).get();
     const processedCount = qaSnap.docs.filter(d => d.get('status') === 'processed').length;
 
     if (processedCount >= expected) {

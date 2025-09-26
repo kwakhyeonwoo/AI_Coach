@@ -9,10 +9,8 @@ import { TOKENS } from '@/theme/tokens';
 import { resolveAndExtractJD } from "@/utils/jd";
 import { useNavigation } from '@react-navigation/native';
 import { createSession } from '@/services/sessionStore';
-import { getAuth } from 'firebase/auth';
 
-const auth = getAuth();
-const uid = auth.currentUser?.uid;
+const TEMP_UID = 'test-user-001';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
@@ -76,11 +74,8 @@ const Home: React.FC<Props> = ({ navigation }) => {
         const role = (settings.role as string) || 'general';
         const expectedQuestions = 5; // 필요시 설정값으로 교체
 
-        if(!uid) {
-            throw new Error("로그인된 사용자가 아닙니다.");
-        }
         // ✅ 새 세션 생성
-        const sessionId = await createSession(uid, {
+        const sessionId = await createSession(TEMP_UID, {
         companyId,
         role,
         status: 'active',

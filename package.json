@@ -21,7 +21,7 @@
     "cheerio": "^1.1.2",
     "expo": "~54.0.1",
     "expo-audio": "~1.0.11",
-    "expo-auth-session": "^7.0.8",
+    "expo-auth-session": "~7.0.8",
     "expo-av": "~16.0.7",
     "expo-file-system": "~19.0.14",
     "expo-haptics": "~15.0.6",

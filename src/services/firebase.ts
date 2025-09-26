@@ -2,6 +2,7 @@ import { initializeApp } from 'firebase/app';
 import { initializeFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import {
+  getAuth,
   initializeAuth,
   getReactNativePersistence,
   type User,
@@ -19,16 +20,21 @@ export const app = initializeApp({
 });
 
 export const storage = getStorage(app);
-
-// RN 환경 안정화
 export const db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
 
-// ✅ AsyncStorage 기반 Auth
-export const auth = initializeAuth(app, {
+// ✅ Auth: 이미 초기화된 경우 재사용
+let authInstance;
+try {
+  authInstance = getAuth(app);
+} catch (e) {
+  // getAuth 실패하면 initializeAuth 시도
+}
+
+export const auth = authInstance ?? initializeAuth(app, {
   persistence: getReactNativePersistence(ReactNativeAsyncStorage),
 });
 
-// ⚠️ 익명 로그인은 나중에 지울 수도 있음
+// ⚠️ 익명 로그인은 필요 시에만
 export async function ensureAuth(): Promise<User> {
   if (!auth.currentUser) {
     const cred = await signInAnonymously(auth);
@@ -37,6 +43,7 @@ export async function ensureAuth(): Promise<User> {
   }
   return auth.currentUser!;
 }
+
 
 declare module 'firebase/auth' {
   export function getReactNativePersistence(storage: any): any;

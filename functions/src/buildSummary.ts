@@ -11,6 +11,8 @@ interface QADoc {
   metrics?: { durationSec?: number };
 }
 
+const TEMP_UID = "test-user-001";
+
 export const buildSummary = onRequest(
   {
     region: "asia-northeast3",
@@ -29,24 +31,16 @@ export const buildSummary = onRequest(
         return;
       }
 
-      const summaryRef = db.doc(`summaries/${sessionId}`);
+      const uid = TEMP_UID;
+      const sessionRef = db.collection("users").doc(uid).collection("sessions").doc(sessionId);
       functions.logger.info(`[buildSummary] Starting for session: ${sessionId}`);
 
       // 🔹 status 먼저 업데이트
-      await summaryRef.set(
+      await sessionRef.set(
         { status: "processing", updatedAt: FieldValue.serverTimestamp() },
         { merge: true }
       );
 
-      // 🔹 summaries/{sessionId}에서 uid 읽기
-      const summarySnap = await summaryRef.get();
-      const uid = summarySnap.data()?.uid;
-      if (!uid) {
-        throw new Error(`uid not found in summaries/${sessionId}`);
-      }
-
-      // 🔹 users/{uid}/sessions/{sessionId} 읽기
-      const sessionRef = db.collection("users").doc(uid).collection("sessions").doc(sessionId);
       const sessionSnap = await sessionRef.get();
       if (!sessionSnap.exists) {
         throw new Error(`Session not found: users/${uid}/sessions/${sessionId}`);
@@ -127,13 +121,6 @@ export const buildSummary = onRequest(
       }
       const summaryData = JSON.parse(resultJson);
 
-      // 🔹 QA 개수 검증
-      if (summaryData.qa?.length !== qaListForAI.length) {
-        functions.logger.warn(
-          `[buildSummary] QA length mismatch. expected=${qaListForAI.length}, got=${summaryData.qa?.length}`
-        );
-      }
-
       // 🔹 최종 저장할 데이터
       const finalPayload = {
         ...summaryData,
@@ -150,7 +137,8 @@ export const buildSummary = onRequest(
         updatedAt: FieldValue.serverTimestamp(),
       };
 
-      await summaryRef.set(finalPayload, { merge: true });
+      // ✅ summaries 컬렉션 대신 users/{uid}/sessions/{sessionId}에 저장
+      await sessionRef.set({ summary: finalPayload, ...finalPayload }, { merge: true });
 
       functions.logger.info(`[buildSummary] Successfully generated summary for session: ${sessionId}`);
       res.status(200).json({ success: true, sessionId });
@@ -163,8 +151,12 @@ export const buildSummary = onRequest(
 
       const sessionId = req.query?.sessionId ?? req.body?.sessionId;
       if (sessionId) {
-        const ref = db.doc(`summaries/${sessionId}`);
-        await ref.set({ status: "error", error: e?.message ?? "Unknown error" }, { merge: true });
+        const uid = TEMP_UID;
+        const sessionRef = db.doc(`users/${uid}/sessions/${sessionId}`);
+        await sessionRef.set(
+          { status: "error", error: e?.message ?? "Unknown error" },
+          { merge: true }
+        );
       }
       res.status(500).json({ error: e?.message ?? "Failed to build summary" });
     }
